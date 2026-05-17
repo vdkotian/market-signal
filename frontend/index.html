@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="en" data-theme="corporate">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Market Signal Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css"
+      rel="stylesheet"
+      type="text/css"
+    />
+  </head>
+  <body class="min-h-screen bg-base-200 text-base-content">
+    <div class="drawer lg:drawer-open">
+      <input id="app-drawer" type="checkbox" class="drawer-toggle" />
+      <main class="drawer-content">
+        <div class="navbar sticky top-0 z-20 border-b border-base-300 bg-base-100">
+          <div class="flex-none lg:hidden">
+            <label for="app-drawer" class="btn btn-square btn-ghost" aria-label="Open navigation">
+              <span class="text-xl">☰</span>
+            </label>
+          </div>
+          <div class="flex-1">
+            <div>
+              <h1 class="text-lg font-semibold">Trading Operations</h1>
+              <p class="text-xs text-base-content/60">Paper trading mode · Zerodha market data ready</p>
+            </div>
+          </div>
+          <div class="flex-none gap-2">
+            <div id="modeBadge" class="badge badge-success gap-2">PAPER</div>
+            <div id="streamBadge" class="badge badge-outline">Stream idle</div>
+          </div>
+        </div>
+
+        <section class="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 lg:p-6">
+          <div class="flex flex-wrap items-center gap-2 rounded-lg border border-base-300 bg-base-100 p-3">
+            <button id="runDemoBtn" class="btn btn-primary btn-sm" type="button">Run Demo Simulation</button>
+            <button id="refreshBtn" class="btn btn-outline btn-sm" type="button">Refresh Dashboard</button>
+            <button id="syncInstrumentsBtn" class="btn btn-outline btn-sm" type="button">Sync Instruments</button>
+            <button id="startStreamBtn" class="btn btn-outline btn-sm" type="button">Start Zerodha Stream</button>
+            <button id="stopStreamBtn" class="btn btn-outline btn-sm" type="button">Stop Stream</button>
+            <button id="squareOffBtn" class="btn btn-warning btn-sm" type="button">EOD Square-Off</button>
+            <span id="statusText" class="ml-auto text-sm text-base-content/60">Ready</span>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-4">
+            <div class="stats border border-base-300 bg-base-100 shadow-sm">
+              <div class="stat">
+                <div class="stat-title">Latest Prices</div>
+                <div id="latestPricesCount" class="stat-value text-2xl">0</div>
+                <div class="stat-desc">In memory</div>
+              </div>
+            </div>
+            <div class="stats border border-base-300 bg-base-100 shadow-sm">
+              <div class="stat">
+                <div class="stat-title">Open Positions</div>
+                <div id="openPositionsCount" class="stat-value text-2xl">0</div>
+                <div class="stat-desc">Paper only</div>
+              </div>
+            </div>
+            <div class="stats border border-base-300 bg-base-100 shadow-sm">
+              <div class="stat">
+                <div class="stat-title">Realized P&L</div>
+                <div id="realizedPnl" class="stat-value text-2xl">0.00</div>
+                <div class="stat-desc">Paper points</div>
+              </div>
+            </div>
+            <div class="stats border border-base-300 bg-base-100 shadow-sm">
+              <div class="stat">
+                <div class="stat-title">Trail Locked</div>
+                <div id="trailLocked" class="stat-value text-2xl">0.00</div>
+                <div class="stat-desc">Open positions</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+            <section class="rounded-lg border border-base-300 bg-base-100">
+              <div class="flex items-center justify-between border-b border-base-300 px-4 py-3">
+                <div>
+                  <h2 class="font-semibold">Live Instrument Monitor</h2>
+                  <p class="text-sm text-base-content/60">Each tick is routed through the workflow by instrument token.</p>
+                </div>
+                <button class="btn btn-sm btn-outline" type="button" id="tableRefreshBtn">Refresh</button>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="table table-sm">
+                  <thead>
+                    <tr>
+                      <th>Instrument</th>
+                      <th>LTP</th>
+                      <th>Direction</th>
+                      <th>Nearest</th>
+                      <th>State</th>
+                      <th>Trail SL</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pricesTable">
+                    <tr><td colspan="6" class="text-base-content/60">No prices loaded.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="rounded-lg border border-base-300 bg-base-100">
+              <div class="border-b border-base-300 px-4 py-3">
+                <h2 class="font-semibold">Operator Setup</h2>
+                <p class="text-sm text-base-content/60">Create an instrument, save today's levels, then send mock ticks.</p>
+              </div>
+              <div class="grid gap-5 p-4">
+                <form id="instrumentForm" class="grid gap-3">
+                  <div class="grid grid-cols-[1fr_auto] gap-2">
+                    <input id="instrumentSearchInput" class="input input-bordered" placeholder="Search Zerodha instruments" />
+                    <button id="instrumentSearchBtn" class="btn btn-outline" type="button">Search</button>
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <label class="form-control">
+                      <div class="label"><span class="label-text">Symbol</span></div>
+                      <input id="symbolInput" class="input input-bordered" value="NIFTY_TEST_CE" />
+                    </label>
+                    <label class="form-control">
+                      <div class="label"><span class="label-text">Exchange</span></div>
+                      <input id="exchangeInput" class="input input-bordered" value="NFO" />
+                    </label>
+                    <label class="form-control">
+                      <div class="label"><span class="label-text">Instrument Token</span></div>
+                      <input id="tokenInput" class="input input-bordered" type="number" value="1001" />
+                    </label>
+                    <label class="form-control">
+                      <div class="label"><span class="label-text">Lot Size</span></div>
+                      <input id="lotSizeInput" class="input input-bordered" type="number" value="50" />
+                    </label>
+                  </div>
+                  <button class="btn btn-primary btn-sm justify-self-end" type="submit">Create Instrument</button>
+                </form>
+
+                <div class="divider my-0"></div>
+
+                <form id="levelForm" class="grid gap-3">
+                  <label class="form-control">
+                    <div class="label"><span class="label-text">Instrument</span></div>
+                    <select id="instrumentSelect" class="select select-bordered">
+                      <option value="">No instruments loaded</option>
+                    </select>
+                  </label>
+                  <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+                    <input id="l0Input" class="input input-bordered" type="number" value="100" placeholder="L0" />
+                    <input id="l1Input" class="input input-bordered" type="number" value="110" placeholder="L1" />
+                    <input id="l2Input" class="input input-bordered" type="number" value="120" placeholder="L2" />
+                    <input id="l3Input" class="input input-bordered" type="number" value="130" placeholder="L3" />
+                  </div>
+                  <button class="btn btn-primary btn-sm justify-self-end" type="submit">Save Today's Levels</button>
+                </form>
+
+                <div class="divider my-0"></div>
+
+                <form id="mockTickForm" class="grid gap-3">
+                  <div class="grid grid-cols-2 gap-3">
+                    <label class="form-control">
+                      <div class="label"><span class="label-text">Token</span></div>
+                      <input id="mockTokenInput" class="input input-bordered" type="number" value="1001" />
+                    </label>
+                    <label class="form-control">
+                      <div class="label"><span class="label-text">Price</span></div>
+                      <input id="mockPriceInput" class="input input-bordered" type="number" value="110" />
+                    </label>
+                  </div>
+                  <button class="btn btn-outline btn-sm justify-self-end" type="submit">Send Mock Tick</button>
+                </form>
+              </div>
+            </section>
+          </div>
+
+          <section class="rounded-lg border border-base-300 bg-base-100">
+            <div class="flex flex-wrap items-center justify-between gap-3 border-b border-base-300 px-4 py-3">
+              <div>
+                <h2 class="font-semibold">Zerodha Connection</h2>
+                <p class="text-sm text-base-content/60">Connect once per trading day. Access token is stored in SQLite.</p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button id="zerodhaStatusBtn" class="btn btn-outline btn-sm" type="button">Check Status</button>
+                <button id="zerodhaLoginBtn" class="btn btn-primary btn-sm" type="button">Connect Zerodha</button>
+                <button id="zerodhaStartBtn" class="btn btn-outline btn-sm" type="button">Start Stream</button>
+                <button id="zerodhaStopBtn" class="btn btn-outline btn-sm" type="button">Stop Stream</button>
+              </div>
+            </div>
+            <div class="grid gap-3 p-4 md:grid-cols-4">
+              <div>
+                <div class="text-xs text-base-content/60">API Key</div>
+                <div id="kiteApiKeyStatus" class="badge badge-outline">Unknown</div>
+              </div>
+              <div>
+                <div class="text-xs text-base-content/60">Today Session</div>
+                <div id="kiteSessionStatus" class="badge badge-outline">Unknown</div>
+              </div>
+              <div>
+                <div class="text-xs text-base-content/60">WebSocket</div>
+                <div id="kiteWebsocketStatus" class="badge badge-outline">Unknown</div>
+              </div>
+              <div>
+                <div class="text-xs text-base-content/60">User</div>
+                <div id="kiteUserStatus" class="font-medium">-</div>
+              </div>
+            </div>
+          </section>
+
+          <div class="grid gap-6 xl:grid-cols-2">
+            <section class="rounded-lg border border-base-300 bg-base-100">
+              <div class="border-b border-base-300 px-4 py-3">
+                <h2 class="font-semibold">Strategy State</h2>
+              </div>
+              <div class="p-4">
+                <ul id="auditTimeline" class="timeline timeline-vertical">
+                  <li><div class="timeline-end timeline-box">No events loaded.</div></li>
+                </ul>
+              </div>
+            </section>
+
+            <section class="rounded-lg border border-base-300 bg-base-100">
+              <div class="border-b border-base-300 px-4 py-3">
+                <h2 class="font-semibold">Paper Trades</h2>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="table table-sm">
+                  <thead>
+                    <tr>
+                      <th>Instrument</th>
+                      <th>Entry</th>
+                      <th>Trail SL</th>
+                      <th>P&L</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="positionsTable">
+                    <tr><td colspan="5" class="text-base-content/60">No open positions.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+
+      <aside class="drawer-side z-30">
+        <label for="app-drawer" aria-label="Close navigation" class="drawer-overlay"></label>
+        <nav class="min-h-full w-72 border-r border-base-300 bg-base-100 p-4">
+          <div class="mb-6">
+            <div class="text-xl font-bold">Market Signal</div>
+            <div class="text-sm text-base-content/60">Level-driven paper trading</div>
+          </div>
+          <ul class="menu gap-1">
+            <li><a class="active">Dashboard</a></li>
+            <li><a>Instruments</a></li>
+            <li><a>Daily Levels</a></li>
+            <li><a>Paper Trades</a></li>
+            <li><a>Backtest Lab</a></li>
+            <li><a>Audit Log</a></li>
+            <li><a>System Health</a></li>
+          </ul>
+        </nav>
+      </aside>
+    </div>
+    <script>
+      const API_BASE = "http://127.0.0.1:8000";
+
+      const $ = (id) => document.getElementById(id);
+
+      function setStatus(message, isError = false) {
+        $("statusText").textContent = message;
+        $("statusText").className = isError
+          ? "ml-auto text-sm text-error"
+          : "ml-auto text-sm text-base-content/60";
+      }
+
+      async function api(path, options = {}) {
+        const response = await fetch(`${API_BASE}${path}`, {
+          headers: { "Content-Type": "application/json" },
+          ...options,
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.detail || `Request failed: ${path}`);
+        }
+        return data;
+      }
+
+      function formatNumber(value) {
+        return Number(value || 0).toFixed(2);
+      }
+
+      function renderSummary(summary) {
+        $("latestPricesCount").textContent = summary.counts.latest_prices || 0;
+        $("openPositionsCount").textContent = summary.counts.open_positions || 0;
+        $("realizedPnl").textContent = formatNumber(summary.pnl.realized);
+        $("trailLocked").textContent = formatNumber(summary.pnl.open_trailing_locked);
+
+        const prices = summary.latest_prices || [];
+        $("pricesTable").innerHTML = prices.length
+          ? prices.map((price) => `
+              <tr>
+                <td class="font-medium">${price.symbol}</td>
+                <td>${formatNumber(price.last_price)}</td>
+                <td><span class="badge badge-outline badge-sm">LIVE</span></td>
+                <td>-</td>
+                <td><span class="badge badge-ghost badge-sm">TRACK</span></td>
+                <td>-</td>
+              </tr>
+            `).join("")
+          : `<tr><td colspan="6" class="text-base-content/60">No prices loaded.</td></tr>`;
+
+        const positions = summary.open_positions || [];
+        $("positionsTable").innerHTML = positions.length
+          ? positions.map((position) => `
+              <tr>
+                <td>#${position.instrument_id}</td>
+                <td>${formatNumber(position.entry_price)}</td>
+                <td>${formatNumber(position.trailing_stoploss_price)}</td>
+                <td>${formatNumber((position.trailing_stoploss_price - position.entry_price) * position.quantity)}</td>
+                <td><span class="badge badge-primary badge-sm">${position.status}</span></td>
+              </tr>
+            `).join("")
+          : `<tr><td colspan="5" class="text-base-content/60">No open positions.</td></tr>`;
+
+        const events = summary.audit_events || [];
+        $("auditTimeline").innerHTML = events.length
+          ? events.slice(0, 8).map((event, index) => `
+              <li>
+                ${index > 0 ? "<hr />" : ""}
+                <div class="timeline-start text-xs">${new Date(event.created_at).toLocaleTimeString()}</div>
+                <div class="timeline-middle h-3 w-3 rounded-full bg-primary"></div>
+                <div class="timeline-end timeline-box">${event.event_type}: ${event.message}</div>
+                ${index < events.length - 1 ? "<hr />" : ""}
+              </li>
+            `).join("")
+          : `<li><div class="timeline-end timeline-box">No events loaded.</div></li>`;
+      }
+
+      async function refreshDashboard() {
+        setStatus("Refreshing dashboard...");
+        const summary = await api("/dashboard/summary");
+        renderSummary(summary);
+        await loadInstruments();
+        await refreshStreamStatus();
+        setStatus("Dashboard refreshed");
+      }
+
+      async function loadInstruments() {
+        const query = $("instrumentSearchInput")?.value?.trim() || "";
+        const instruments = await api(`/instruments?limit=100${query ? `&query=${encodeURIComponent(query)}` : ""}`);
+        $("instrumentSelect").innerHTML = instruments.length
+          ? instruments.map((instrument) => `
+              <option value="${instrument.id}" data-token="${instrument.instrument_token}">
+                ${instrument.symbol} · ${instrument.instrument_token}
+              </option>
+            `).join("")
+          : `<option value="">No instruments loaded</option>`;
+        const selected = $("instrumentSelect").selectedOptions[0];
+        if (selected?.dataset.token) {
+          $("mockTokenInput").value = selected.dataset.token;
+        }
+      }
+
+      async function refreshStreamStatus() {
+        const status = await api("/zerodha/stream/status");
+        $("streamBadge").textContent = status.running ? "Stream running" : "Stream idle";
+        $("streamBadge").className = status.running ? "badge badge-success" : "badge badge-outline";
+        $("kiteWebsocketStatus").textContent = status.running ? "Running" : "Idle";
+        $("kiteWebsocketStatus").className = status.running ? "badge badge-success" : "badge badge-outline";
+      }
+
+      async function refreshZerodhaStatus() {
+        setStatus("Checking Zerodha status...");
+        const status = await api("/zerodha/status");
+        $("kiteApiKeyStatus").textContent = status.api_key_configured ? "Configured" : "Missing";
+        $("kiteApiKeyStatus").className = status.api_key_configured ? "badge badge-success" : "badge badge-error";
+        $("kiteSessionStatus").textContent = status.db_session_active ? "Connected" : "Not connected";
+        $("kiteSessionStatus").className = status.db_session_active ? "badge badge-success" : "badge badge-warning";
+        $("kiteUserStatus").textContent = status.session_user || "-";
+        await refreshStreamStatus();
+        setStatus("Zerodha status refreshed");
+      }
+
+      async function runAction(label, path) {
+        try {
+          setStatus(`${label}...`);
+          await api(path, { method: "POST" });
+          await refreshDashboard();
+          setStatus(`${label} complete`);
+        } catch (error) {
+          setStatus(error.message, true);
+        }
+      }
+
+      async function syncInstruments() {
+        try {
+          setStatus("Syncing Zerodha instruments...");
+          const result = await api("/instruments/sync/zerodha?exchange=NFO", { method: "POST" });
+          await loadInstruments();
+          setStatus(`Synced ${result.synced} instruments`);
+        } catch (error) {
+          setStatus(error.message, true);
+        }
+      }
+
+      function todayIso() {
+        return new Date().toISOString().slice(0, 10);
+      }
+
+      $("instrumentForm").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        try {
+          setStatus("Creating instrument...");
+          await api("/instruments", {
+            method: "POST",
+            body: JSON.stringify({
+              symbol: $("symbolInput").value.trim(),
+              exchange: $("exchangeInput").value.trim(),
+              instrument_token: Number($("tokenInput").value),
+              lot_size: Number($("lotSizeInput").value),
+              tick_size: 0.05,
+            }),
+          });
+          await loadInstruments();
+          setStatus("Instrument created");
+        } catch (error) {
+          setStatus(error.message, true);
+        }
+      });
+      $("instrumentSearchBtn").addEventListener("click", () => loadInstruments().catch((error) => setStatus(error.message, true)));
+      $("instrumentSearchInput").addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          loadInstruments().catch((error) => setStatus(error.message, true));
+        }
+      });
+
+      $("instrumentSelect").addEventListener("change", () => {
+        const selected = $("instrumentSelect").selectedOptions[0];
+        if (selected?.dataset.token) {
+          $("mockTokenInput").value = selected.dataset.token;
+        }
+      });
+
+      $("levelForm").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        try {
+          const instrumentId = Number($("instrumentSelect").value);
+          if (!instrumentId) throw new Error("Create or select an instrument first");
+          setStatus("Saving levels...");
+          await api("/level-sets", {
+            method: "POST",
+            body: JSON.stringify({
+              instrument_id: instrumentId,
+              trading_day: todayIso(),
+              created_by: "dashboard",
+              levels: [
+                { level_name: "L0", price: Number($("l0Input").value), sort_order: 0, role: "STOPLOSS" },
+                { level_name: "L1", price: Number($("l1Input").value), sort_order: 1, role: "ENTRY" },
+                { level_name: "L2", price: Number($("l2Input").value), sort_order: 2, role: "CHECKPOINT" },
+                { level_name: "L3", price: Number($("l3Input").value), sort_order: 3, role: "CHECKPOINT" },
+              ],
+            }),
+          });
+          await refreshDashboard();
+          setStatus("Levels saved");
+        } catch (error) {
+          setStatus(error.message, true);
+        }
+      });
+
+      $("mockTickForm").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        try {
+          setStatus("Sending mock tick...");
+          await api("/ticks/mock", {
+            method: "POST",
+            body: JSON.stringify({
+              instrument_token: Number($("mockTokenInput").value),
+              last_price: Number($("mockPriceInput").value),
+            }),
+          });
+          await refreshDashboard();
+          setStatus("Mock tick processed");
+        } catch (error) {
+          setStatus(error.message, true);
+        }
+      });
+
+      $("runDemoBtn").addEventListener("click", () => runAction("Running demo simulation", "/simulations/demo"));
+      $("refreshBtn").addEventListener("click", refreshDashboard);
+      $("syncInstrumentsBtn").addEventListener("click", syncInstruments);
+      $("tableRefreshBtn").addEventListener("click", refreshDashboard);
+      $("startStreamBtn").addEventListener("click", () => runAction("Starting Zerodha stream", "/zerodha/stream/start"));
+      $("stopStreamBtn").addEventListener("click", () => runAction("Stopping stream", "/zerodha/stream/stop"));
+      $("squareOffBtn").addEventListener("click", () => runAction("Running EOD square-off", "/trading/eod-square-off"));
+      $("zerodhaStatusBtn").addEventListener("click", () => refreshZerodhaStatus().catch((error) => setStatus(error.message, true)));
+      $("zerodhaLoginBtn").addEventListener("click", () => {
+        window.location.href = `${API_BASE}/zerodha/login`;
+      });
+      $("zerodhaStartBtn").addEventListener("click", () => runAction("Starting Zerodha stream", "/zerodha/stream/start"));
+      $("zerodhaStopBtn").addEventListener("click", () => runAction("Stopping stream", "/zerodha/stream/stop"));
+
+      refreshDashboard()
+        .then(refreshZerodhaStatus)
+        .catch((error) => setStatus(error.message, true));
+    </script>
+  </body>
+</html>
