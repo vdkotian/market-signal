@@ -104,69 +104,50 @@
             </section>
 
             <section class="rounded-lg border border-base-300 bg-base-100">
-              <div class="border-b border-base-300 px-4 py-3">
-                <h2 class="font-semibold">Operator Setup</h2>
-                <p class="text-sm text-base-content/60">Create an instrument, save today's levels, then send mock ticks.</p>
+              <div class="flex items-center justify-between border-b border-base-300 px-4 py-3">
+                <div>
+                  <h2 class="font-semibold">Operator Setup</h2>
+                  <p class="text-sm text-base-content/60">Daily instrument and levels</p>
+                </div>
+                <span class="badge badge-outline">Paper</span>
               </div>
-              <div class="grid gap-5 p-4">
-                <form id="instrumentForm" class="grid gap-3">
+              <div class="grid gap-4 p-4">
+                <div class="grid gap-2">
+                  <div class="flex items-center justify-between">
+                    <div class="text-sm font-medium">Instrument</div>
+                    <div class="text-xs text-base-content/60">Zerodha synced</div>
+                  </div>
+                  <div class="relative">
+                    <input id="instrumentSearchInput" class="input input-bordered w-full" placeholder="Type instrument symbol" autocomplete="off" />
+                    <div id="instrumentSuggestions" class="absolute z-40 mt-1 hidden max-h-64 w-full overflow-auto rounded-lg border border-base-300 bg-base-100 shadow"></div>
+                  </div>
+                  <div class="flex items-center justify-between rounded-lg border border-base-300 bg-base-200 px-3 py-2">
+                    <div>
+                      <div class="text-xs text-base-content/60">Selected</div>
+                      <div id="selectedInstrumentText" class="font-medium">No instrument selected</div>
+                    </div>
+                    <span class="badge badge-ghost">Today</span>
+                  </div>
+                </div>
+
+                <form id="levelForm" class="grid gap-3 rounded-lg border border-base-300 p-3">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <div class="text-sm font-medium">Levels</div>
+                      <div class="text-xs text-base-content/60">L0 stoploss · L1 entry · L2+ targets</div>
+                    </div>
+                    <button class="btn btn-outline btn-sm" id="addLevelBtn" type="button">+ Target</button>
+                  </div>
+                  <div class="grid gap-2" id="levelRows"></div>
+                  <button class="btn btn-primary btn-sm w-full" type="submit">Save Today's Levels</button>
+                </form>
+
+                <form id="mockTickForm" class="grid gap-3 rounded-lg border border-base-300 p-3">
+                  <div class="text-sm font-medium">Test Tick</div>
                   <div class="grid grid-cols-[1fr_auto] gap-2">
-                    <input id="instrumentSearchInput" class="input input-bordered" placeholder="Search Zerodha instruments" />
-                    <button id="instrumentSearchBtn" class="btn btn-outline" type="button">Search</button>
+                    <input id="mockPriceInput" class="input input-bordered" type="number" value="110" placeholder="Price" />
+                    <button class="btn btn-outline btn-sm self-center" type="submit">Send</button>
                   </div>
-                  <div class="grid grid-cols-2 gap-3">
-                    <label class="form-control">
-                      <div class="label"><span class="label-text">Symbol</span></div>
-                      <input id="symbolInput" class="input input-bordered" value="NIFTY_TEST_CE" />
-                    </label>
-                    <label class="form-control">
-                      <div class="label"><span class="label-text">Exchange</span></div>
-                      <input id="exchangeInput" class="input input-bordered" value="NFO" />
-                    </label>
-                    <label class="form-control">
-                      <div class="label"><span class="label-text">Instrument Token</span></div>
-                      <input id="tokenInput" class="input input-bordered" type="number" value="1001" />
-                    </label>
-                    <label class="form-control">
-                      <div class="label"><span class="label-text">Lot Size</span></div>
-                      <input id="lotSizeInput" class="input input-bordered" type="number" value="50" />
-                    </label>
-                  </div>
-                  <button class="btn btn-primary btn-sm justify-self-end" type="submit">Create Instrument</button>
-                </form>
-
-                <div class="divider my-0"></div>
-
-                <form id="levelForm" class="grid gap-3">
-                  <label class="form-control">
-                    <div class="label"><span class="label-text">Instrument</span></div>
-                    <select id="instrumentSelect" class="select select-bordered">
-                      <option value="">No instruments loaded</option>
-                    </select>
-                  </label>
-                  <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
-                    <input id="l0Input" class="input input-bordered" type="number" value="100" placeholder="L0" />
-                    <input id="l1Input" class="input input-bordered" type="number" value="110" placeholder="L1" />
-                    <input id="l2Input" class="input input-bordered" type="number" value="120" placeholder="L2" />
-                    <input id="l3Input" class="input input-bordered" type="number" value="130" placeholder="L3" />
-                  </div>
-                  <button class="btn btn-primary btn-sm justify-self-end" type="submit">Save Today's Levels</button>
-                </form>
-
-                <div class="divider my-0"></div>
-
-                <form id="mockTickForm" class="grid gap-3">
-                  <div class="grid grid-cols-2 gap-3">
-                    <label class="form-control">
-                      <div class="label"><span class="label-text">Token</span></div>
-                      <input id="mockTokenInput" class="input input-bordered" type="number" value="1001" />
-                    </label>
-                    <label class="form-control">
-                      <div class="label"><span class="label-text">Price</span></div>
-                      <input id="mockPriceInput" class="input input-bordered" type="number" value="110" />
-                    </label>
-                  </div>
-                  <button class="btn btn-outline btn-sm justify-self-end" type="submit">Send Mock Tick</button>
                 </form>
               </div>
             </section>
@@ -202,6 +183,32 @@
                 <div class="text-xs text-base-content/60">User</div>
                 <div id="kiteUserStatus" class="font-medium">-</div>
               </div>
+            </div>
+          </section>
+
+          <section class="rounded-lg border border-base-300 bg-base-100">
+            <div class="flex items-center justify-between border-b border-base-300 px-4 py-3">
+              <div>
+                <h2 class="font-semibold">Today’s Level Sets</h2>
+                <p class="text-sm text-base-content/60">Only one active set is allowed per instrument per day.</p>
+              </div>
+              <button id="refreshLevelsBtn" class="btn btn-outline btn-sm" type="button">Refresh Levels</button>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="table table-sm">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Instrument</th>
+                    <th>Status</th>
+                    <th>Levels</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="levelSetsTable">
+                  <tr><td colspan="5" class="text-base-content/60">No level sets loaded.</td></tr>
+                </tbody>
+              </table>
             </div>
           </section>
 
@@ -265,6 +272,13 @@
       const API_BASE = "http://127.0.0.1:8000";
 
       const $ = (id) => document.getElementById(id);
+      let selectedInstrument = null;
+      let instrumentSearchTimer = null;
+      let levelDrafts = [
+        { level_name: "L0", price: "", role: "STOPLOSS" },
+        { level_name: "L1", price: "", role: "ENTRY" },
+        { level_name: "L2", price: "", role: "CHECKPOINT" },
+      ];
 
       function setStatus(message, isError = false) {
         $("statusText").textContent = message;
@@ -287,6 +301,72 @@
 
       function formatNumber(value) {
         return Number(value || 0).toFixed(2);
+      }
+
+      function levelRoleLabel(level) {
+        if (level.level_name === "L0") return "Stoploss";
+        if (level.level_name === "L1") return "Entry";
+        return "Target";
+      }
+
+      function renderLevelRows() {
+        $("levelRows").innerHTML = levelDrafts.map((level, index) => `
+          <div class="grid grid-cols-[76px_1fr_36px] items-center gap-2 rounded-lg border border-base-300 bg-base-200 px-3 py-2">
+            <div>
+              <div class="font-semibold leading-tight">${level.level_name}</div>
+              <div class="text-xs text-base-content/60">${levelRoleLabel(level)}</div>
+            </div>
+            <input
+              class="input input-bordered input-sm w-full bg-base-100"
+              data-level-index="${index}"
+              type="number"
+              value="${level.price}"
+              placeholder="${level.level_name} price"
+            />
+            ${index > 2
+              ? `<button class="btn btn-ghost btn-sm btn-square" data-remove-level="${index}" type="button" aria-label="Remove ${level.level_name}">x</button>`
+              : `<span></span>`}
+          </div>
+        `).join("");
+
+        document.querySelectorAll("[data-level-index]").forEach((input) => {
+          input.addEventListener("input", () => {
+            levelDrafts[Number(input.dataset.levelIndex)].price = Number(input.value);
+          });
+        });
+        document.querySelectorAll("[data-remove-level]").forEach((button) => {
+          button.addEventListener("click", () => {
+            levelDrafts.splice(Number(button.dataset.removeLevel), 1);
+            levelDrafts = levelDrafts.map((level, index) => ({
+              ...level,
+              level_name: `L${index}`,
+              role: index === 0 ? "STOPLOSS" : index === 1 ? "ENTRY" : "CHECKPOINT",
+            }));
+            renderLevelRows();
+          });
+        });
+      }
+
+      function addLevelRow() {
+        const previous = levelDrafts[levelDrafts.length - 1];
+        levelDrafts.push({
+          level_name: `L${levelDrafts.length}`,
+          price: "",
+          role: "CHECKPOINT",
+        });
+        renderLevelRows();
+      }
+
+      function buildLevelPayload() {
+        if (levelDrafts.some((level) => !Number(level.price))) {
+          throw new Error("Enter prices for all levels before saving");
+        }
+        return levelDrafts.map((level, index) => ({
+          level_name: `L${index}`,
+          price: Number(level.price),
+          sort_order: index,
+          role: index === 0 ? "STOPLOSS" : index === 1 ? "ENTRY" : "CHECKPOINT",
+        }));
       }
 
       function renderSummary(summary) {
@@ -340,25 +420,66 @@
         setStatus("Refreshing dashboard...");
         const summary = await api("/dashboard/summary");
         renderSummary(summary);
-        await loadInstruments();
         await refreshStreamStatus();
         setStatus("Dashboard refreshed");
       }
 
       async function loadInstruments() {
         const query = $("instrumentSearchInput")?.value?.trim() || "";
-        const instruments = await api(`/instruments?limit=100${query ? `&query=${encodeURIComponent(query)}` : ""}`);
-        $("instrumentSelect").innerHTML = instruments.length
-          ? instruments.map((instrument) => `
-              <option value="${instrument.id}" data-token="${instrument.instrument_token}">
-                ${instrument.symbol} · ${instrument.instrument_token}
-              </option>
-            `).join("")
-          : `<option value="">No instruments loaded</option>`;
-        const selected = $("instrumentSelect").selectedOptions[0];
-        if (selected?.dataset.token) {
-          $("mockTokenInput").value = selected.dataset.token;
+        if (query.length < 2) {
+          hideInstrumentSuggestions();
+          return;
         }
+        const instruments = await api(`/instruments?limit=100${query ? `&query=${encodeURIComponent(query)}` : ""}`);
+        renderInstrumentSuggestions(instruments);
+      }
+
+      function hideInstrumentSuggestions() {
+        const menu = $("instrumentSuggestions");
+        menu.innerHTML = "";
+        menu.classList.add("hidden");
+      }
+
+      function renderInstrumentSuggestions(instruments) {
+        const menu = $("instrumentSuggestions");
+        if (!instruments.length) {
+          menu.innerHTML = `<div class="p-3 text-sm text-base-content/60">No synced instruments match this text.</div>`;
+          menu.classList.toggle("hidden", !$("instrumentSearchInput").value.trim());
+          return;
+        }
+        menu.innerHTML = instruments.map((instrument) => `
+          <button
+            class="block w-full px-3 py-2 text-left hover:bg-base-200"
+            data-instrument-id="${instrument.id}"
+            data-symbol="${instrument.symbol}"
+            data-exchange="${instrument.exchange}"
+            data-token="${instrument.instrument_token}"
+            data-lot-size="${instrument.lot_size}"
+            type="button"
+          >
+            <span class="font-medium">${instrument.symbol}</span>
+            <span class="text-xs text-base-content/60">${instrument.exchange}</span>
+          </button>
+        `).join("");
+        menu.classList.remove("hidden");
+        menu.querySelectorAll("[data-instrument-id]").forEach((button) => {
+          button.addEventListener("click", () => {
+            selectInstrument({
+              id: Number(button.dataset.instrumentId),
+              symbol: button.dataset.symbol,
+              exchange: button.dataset.exchange,
+              instrument_token: Number(button.dataset.token),
+              lot_size: Number(button.dataset.lotSize || 1),
+            });
+          });
+        });
+      }
+
+      function selectInstrument(instrument) {
+        selectedInstrument = instrument;
+        $("selectedInstrumentText").textContent = `${instrument.symbol} · ${instrument.exchange}`;
+        $("instrumentSearchInput").value = instrument.symbol;
+        hideInstrumentSuggestions();
       }
 
       async function refreshStreamStatus() {
@@ -396,7 +517,7 @@
         try {
           setStatus("Syncing Zerodha instruments...");
           const result = await api("/instruments/sync/zerodha?exchange=NFO", { method: "POST" });
-          await loadInstruments();
+          hideInstrumentSuggestions();
           setStatus(`Synced ${result.synced} instruments`);
         } catch (error) {
           setStatus(error.message, true);
@@ -407,45 +528,54 @@
         return new Date().toISOString().slice(0, 10);
       }
 
-      $("instrumentForm").addEventListener("submit", async (event) => {
-        event.preventDefault();
-        try {
-          setStatus("Creating instrument...");
-          await api("/instruments", {
-            method: "POST",
-            body: JSON.stringify({
-              symbol: $("symbolInput").value.trim(),
-              exchange: $("exchangeInput").value.trim(),
-              instrument_token: Number($("tokenInput").value),
-              lot_size: Number($("lotSizeInput").value),
-              tick_size: 0.05,
-            }),
-          });
-          await loadInstruments();
-          setStatus("Instrument created");
-        } catch (error) {
-          setStatus(error.message, true);
-        }
-      });
-      $("instrumentSearchBtn").addEventListener("click", () => loadInstruments().catch((error) => setStatus(error.message, true)));
-      $("instrumentSearchInput").addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          loadInstruments().catch((error) => setStatus(error.message, true));
-        }
-      });
+      async function loadLevelSets() {
+        const levelSets = await api(`/level-sets?trading_day=${todayIso()}`);
+        $("levelSetsTable").innerHTML = levelSets.length
+          ? levelSets.map((set) => `
+              <tr>
+                <td>#${set.id}</td>
+                <td>#${set.instrument_id}</td>
+                <td><span class="badge badge-sm ${set.status === "ACTIVE" ? "badge-success" : "badge-outline"}">${set.status}</span></td>
+                <td>${set.levels.map((level) => `${level.level_name}:${formatNumber(level.price)}`).join(" · ")}</td>
+                <td>
+                  ${set.status === "ACTIVE"
+                    ? `<button class="btn btn-xs btn-outline" data-cancel-level-set="${set.id}" type="button">Cancel</button>`
+                    : ""}
+                </td>
+              </tr>
+            `).join("")
+          : `<tr><td colspan="5" class="text-base-content/60">No level sets loaded.</td></tr>`;
 
-      $("instrumentSelect").addEventListener("change", () => {
-        const selected = $("instrumentSelect").selectedOptions[0];
-        if (selected?.dataset.token) {
-          $("mockTokenInput").value = selected.dataset.token;
+        document.querySelectorAll("[data-cancel-level-set]").forEach((button) => {
+          button.addEventListener("click", async () => {
+            try {
+              setStatus("Cancelling level set...");
+              await api(`/level-sets/${button.dataset.cancelLevelSet}/cancel`, { method: "POST" });
+              await loadLevelSets();
+              setStatus("Level set cancelled");
+            } catch (error) {
+              setStatus(error.message, true);
+            }
+          });
+        });
+      }
+
+      $("instrumentSearchInput").addEventListener("input", () => {
+        clearTimeout(instrumentSearchTimer);
+        instrumentSearchTimer = setTimeout(() => {
+          loadInstruments().catch((error) => setStatus(error.message, true));
+        }, 300);
+      });
+      $("instrumentSearchInput").addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          hideInstrumentSuggestions();
         }
       });
 
       $("levelForm").addEventListener("submit", async (event) => {
         event.preventDefault();
         try {
-          const instrumentId = Number($("instrumentSelect").value);
+          const instrumentId = selectedInstrument?.id;
           if (!instrumentId) throw new Error("Create or select an instrument first");
           setStatus("Saving levels...");
           await api("/level-sets", {
@@ -454,15 +584,11 @@
               instrument_id: instrumentId,
               trading_day: todayIso(),
               created_by: "dashboard",
-              levels: [
-                { level_name: "L0", price: Number($("l0Input").value), sort_order: 0, role: "STOPLOSS" },
-                { level_name: "L1", price: Number($("l1Input").value), sort_order: 1, role: "ENTRY" },
-                { level_name: "L2", price: Number($("l2Input").value), sort_order: 2, role: "CHECKPOINT" },
-                { level_name: "L3", price: Number($("l3Input").value), sort_order: 3, role: "CHECKPOINT" },
-              ],
+              levels: buildLevelPayload(),
             }),
           });
           await refreshDashboard();
+          await loadLevelSets();
           setStatus("Levels saved");
         } catch (error) {
           setStatus(error.message, true);
@@ -472,11 +598,12 @@
       $("mockTickForm").addEventListener("submit", async (event) => {
         event.preventDefault();
         try {
+          if (!selectedInstrument?.instrument_token) throw new Error("Select an instrument first");
           setStatus("Sending mock tick...");
           await api("/ticks/mock", {
             method: "POST",
             body: JSON.stringify({
-              instrument_token: Number($("mockTokenInput").value),
+              instrument_token: selectedInstrument.instrument_token,
               last_price: Number($("mockPriceInput").value),
             }),
           });
@@ -489,6 +616,8 @@
 
       $("runDemoBtn").addEventListener("click", () => runAction("Running demo simulation", "/simulations/demo"));
       $("refreshBtn").addEventListener("click", refreshDashboard);
+      $("refreshLevelsBtn").addEventListener("click", () => loadLevelSets().catch((error) => setStatus(error.message, true)));
+      $("addLevelBtn").addEventListener("click", addLevelRow);
       $("syncInstrumentsBtn").addEventListener("click", syncInstruments);
       $("tableRefreshBtn").addEventListener("click", refreshDashboard);
       $("startStreamBtn").addEventListener("click", () => runAction("Starting Zerodha stream", "/zerodha/stream/start"));
@@ -501,7 +630,9 @@
       $("zerodhaStartBtn").addEventListener("click", () => runAction("Starting Zerodha stream", "/zerodha/stream/start"));
       $("zerodhaStopBtn").addEventListener("click", () => runAction("Stopping stream", "/zerodha/stream/stop"));
 
+      renderLevelRows();
       refreshDashboard()
+        .then(loadLevelSets)
         .then(refreshZerodhaStatus)
         .catch((error) => setStatus(error.message, true));
     </script>

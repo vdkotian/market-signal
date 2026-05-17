@@ -32,6 +32,11 @@ class DailyLevelSetCreate(BaseModel):
     levels: List[LevelCreate]
 
 
+class DailyLevelSetUpdate(BaseModel):
+    updated_by: Optional[str] = None
+    levels: List[LevelCreate]
+
+
 class LevelRead(LevelCreate):
     id: int
 

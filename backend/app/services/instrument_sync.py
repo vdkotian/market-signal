@@ -30,7 +30,7 @@ def sync_zerodha_instruments(
             symbol=symbol,
             exchange=row_exchange,
             instrument_token=int(token),
-            lot_size=int(row.get("lot_size") or 1),
+            lot_size=1,
             tick_size=float(row.get("tick_size") or 0.05),
         )
         synced += 1

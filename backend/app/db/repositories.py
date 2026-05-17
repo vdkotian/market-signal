@@ -12,6 +12,10 @@ class LockedLevelSetError(ValueError):
     pass
 
 
+class DuplicateLevelSetError(ValueError):
+    pass
+
+
 def create_instrument(
     db: Session,
     symbol: str,
@@ -81,6 +85,15 @@ def create_daily_level_set(
 ) -> DailyLevelSet:
     if trading_day < date.today():
         raise LockedLevelSetError("Past trading days cannot be edited")
+    existing = db.scalar(
+        select(DailyLevelSet).where(
+            DailyLevelSet.instrument_id == instrument_id,
+            DailyLevelSet.trading_day == trading_day,
+            DailyLevelSet.status == LevelSetStatus.ACTIVE.value,
+        )
+    )
+    if existing:
+        raise DuplicateLevelSetError("Active level set already exists for instrument and day")
 
     level_set = DailyLevelSet(
         instrument_id=instrument_id,
@@ -117,7 +130,7 @@ def ensure_demo_level_set(
             symbol="DEMO_NIFTY_CE",
             exchange="NFO",
             instrument_token=instrument_token,
-            lot_size=50,
+            lot_size=1,
             tick_size=0.05,
         )
 
@@ -158,13 +171,63 @@ def get_daily_level_set(db: Session, level_set_id: int) -> DailyLevelSet:
 
 
 def list_daily_level_sets(db: Session) -> List[DailyLevelSet]:
-    return list(
-        db.scalars(
-            select(DailyLevelSet)
-            .options(selectinload(DailyLevelSet.levels))
-            .order_by(DailyLevelSet.trading_day.desc())
-        ).all()
+    return list_daily_level_sets_filtered(db)
+
+
+def list_daily_level_sets_filtered(
+    db: Session,
+    trading_day: Optional[date] = None,
+    instrument_id: Optional[int] = None,
+) -> List[DailyLevelSet]:
+    statement = select(DailyLevelSet).options(selectinload(DailyLevelSet.levels))
+    if trading_day:
+        statement = statement.where(DailyLevelSet.trading_day == trading_day)
+    if instrument_id:
+        statement = statement.where(DailyLevelSet.instrument_id == instrument_id)
+    statement = statement.order_by(DailyLevelSet.trading_day.desc(), DailyLevelSet.id.desc())
+    return list(db.scalars(statement).all())
+
+
+def update_daily_level_set(
+    db: Session,
+    level_set_id: int,
+    updated_by: str,
+    levels: List[dict],
+) -> DailyLevelSet:
+    level_set = get_daily_level_set(db, level_set_id)
+    assert_level_set_editable(level_set, date.today())
+    level_set.levels.clear()
+    db.flush()
+    for level in levels:
+        level_set.levels.append(Level(**level))
+    level_set.updated_by = updated_by
+    db.add(
+        AuditLog(
+            event_type="DAILY_LEVEL_SET_UPDATED",
+            instrument_id=level_set.instrument_id,
+            message=f"Updated levels for {level_set.trading_day}",
+        )
     )
+    db.commit()
+    db.refresh(level_set)
+    return level_set
+
+
+def cancel_daily_level_set(db: Session, level_set_id: int, updated_by: str) -> DailyLevelSet:
+    level_set = get_daily_level_set(db, level_set_id)
+    assert_level_set_editable(level_set, date.today())
+    level_set.status = LevelSetStatus.CANCELLED.value
+    level_set.updated_by = updated_by
+    db.add(
+        AuditLog(
+            event_type="DAILY_LEVEL_SET_CANCELLED",
+            instrument_id=level_set.instrument_id,
+            message=f"Cancelled levels for {level_set.trading_day}",
+        )
+    )
+    db.commit()
+    db.refresh(level_set)
+    return level_set
 
 
 def lock_past_level_sets(db: Session, today: date) -> int:
