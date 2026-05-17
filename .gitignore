@@ -219,3 +219,8 @@ __marimo__/
 .env
 .venv
 market_signal.db
+.python-version
+.vscode/
+main.py
+pyproject.toml
+uv.lock
