@@ -10,7 +10,7 @@ from backend.app.db.session import Base, get_db
 from backend.app.dto.trading_dto import Tick
 from backend.app.main import app
 from backend.app.market.tick_cache import tick_cache
-from backend.app.models.tables import Instrument, Order, Position
+from backend.app.models.tables import AuditLog, Instrument, Order, Position
 
 
 def test_eod_square_off_closes_open_position_at_latest_price() -> None:
@@ -133,3 +133,90 @@ def test_eod_square_off_skips_when_latest_price_missing() -> None:
     assert response.status_code == 200
     assert response.json()["closed"] == []
     assert response.json()["skipped"][0]["reason"] == "No latest price available"
+
+
+def test_reset_today_paper_trades_deletes_positions_orders_and_trade_audit() -> None:
+    tick_cache._latest_ticks.clear()
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+
+    db = TestingSessionLocal()
+    instrument = Instrument(
+        symbol="NIFTY_TEST_CE",
+        exchange="NFO",
+        instrument_token=1001,
+        lot_size=50,
+        tick_size=0.05,
+    )
+    db.add(instrument)
+    db.flush()
+    position = Position(
+        instrument_id=instrument.id,
+        trading_day=date.today(),
+        quantity=1,
+        entry_price=110,
+        stoploss_price=100,
+        trailing_stoploss_price=115,
+        high_water_mark=120,
+        status=PositionStatus.CLOSED.value,
+        exit_price=115,
+        realized_pnl=5,
+    )
+    db.add(position)
+    db.flush()
+    db.add(
+        Order(
+            instrument_id=instrument.id,
+            position_id=position.id,
+            side="BUY",
+            quantity=1,
+            price=110,
+            reason="L1 entry reached",
+        )
+    )
+    db.add(
+        AuditLog(
+            event_type="PAPER_EXECUTION",
+            instrument_id=instrument.id,
+            message="BUY 1 at 110",
+        )
+    )
+    db.add(
+        AuditLog(
+            event_type="LEVEL_SET_CREATED",
+            instrument_id=instrument.id,
+            message="Keep this non-trade audit event",
+        )
+    )
+    db.commit()
+    db.close()
+
+    def override_db():
+        session = TestingSessionLocal()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_db] = override_db
+    client = TestClient(app)
+    response = client.post("/trading/paper-trades/reset-today")
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["positions_deleted"] == 1
+    assert response.json()["orders_deleted"] == 1
+    assert response.json()["audit_events_deleted"] == 1
+
+    verify = TestingSessionLocal()
+    assert verify.scalars(select(Position)).all() == []
+    assert verify.scalars(select(Order)).all() == []
+    remaining_audit = verify.scalar(select(AuditLog))
+    verify.close()
+
+    assert remaining_audit.event_type == "LEVEL_SET_CREATED"

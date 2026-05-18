@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.timezone import display_ist_time, iso_utc
+from backend.app.core.timezone import as_utc, display_ist_time, iso_utc
 from backend.app.db.trading_state import (
     get_active_level_context,
     has_position_for_day,
@@ -42,7 +42,7 @@ def process_tick(
         instrument_id=instrument.id,
         symbol=instrument.symbol,
         last_price=last_price,
-        timestamp=timestamp or datetime.utcnow(),
+        timestamp=as_utc(timestamp or datetime.utcnow()),
         volume=volume,
     )
     previous_tick = tick_cache.get_previous(instrument.id)

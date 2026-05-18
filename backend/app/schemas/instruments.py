@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 class InstrumentCreate(BaseModel):
     symbol: str
     exchange: str
+    instrument_type: str = ""
     instrument_token: int
     lot_size: int = 1
     tick_size: float = 0.05

@@ -41,6 +41,7 @@
             <button id="startStreamBtn" class="btn btn-outline btn-sm" type="button">Start Zerodha Stream</button>
             <button id="stopStreamBtn" class="btn btn-outline btn-sm" type="button">Stop Stream</button>
             <button id="squareOffBtn" class="btn btn-warning btn-sm" type="button">EOD Square-Off</button>
+            <button id="resetPaperTradesBtn" class="btn btn-error btn-outline btn-sm" type="button">Reset Paper Trades</button>
             <span id="statusText" class="ml-auto text-sm text-base-content/60">Ready</span>
           </div>
 
@@ -117,11 +118,18 @@
                     <div class="text-sm font-medium">Instrument</div>
                     <div class="text-xs text-base-content/60">Zerodha synced</div>
                   </div>
-                  <div class="grid grid-cols-[112px_1fr] gap-2">
+                  <div class="grid gap-2 sm:grid-cols-[100px_100px_1fr]">
                     <select id="instrumentExchangeFilter" class="select select-bordered">
                       <option value="">All</option>
                       <option value="NFO">NFO</option>
                       <option value="BFO">BFO</option>
+                      <option value="MCX">MCX</option>
+                    </select>
+                    <select id="instrumentTypeFilter" class="select select-bordered">
+                      <option value="">All</option>
+                      <option value="CE">CE</option>
+                      <option value="PE">PE</option>
+                      <option value="FUT">FUT</option>
                     </select>
                     <div class="relative">
                       <input id="instrumentSearchInput" class="input input-bordered w-full" placeholder="Type instrument symbol" autocomplete="off" />
@@ -410,6 +418,48 @@
           `).join(`<span class="text-base-content/30">/</span>`);
       }
 
+      function tradeBadgeClass(status) {
+        if (status === "OPEN_TRADE") return "badge-primary";
+        if (status === "CLOSED_FOR_TODAY") return "badge-neutral";
+        return "badge-warning";
+      }
+
+      function renderTradeState(item) {
+        const trade = item.trade || { status: "WAITING_FOR_ENTRY", label: "Waiting for entry" };
+        if (trade.status === "OPEN_TRADE") {
+          return `
+            <div class="grid gap-1">
+              <span class="badge ${tradeBadgeClass(trade.status)} badge-sm">${trade.label}</span>
+              <div class="text-xs text-base-content/60">Entry ${formatNumber(trade.entry_price)} · Trail ${formatNumber(trade.trailing_stoploss_price)}</div>
+            </div>
+          `;
+        }
+        if (trade.status === "CLOSED_FOR_TODAY") {
+          return `
+            <div class="grid gap-1">
+              <span class="badge ${tradeBadgeClass(trade.status)} badge-sm">${trade.label}</span>
+              <div class="text-xs text-base-content/60">Exit ${formatNumber(trade.exit_price)} · P&L ${formatNumber(trade.realized_pnl)}</div>
+            </div>
+          `;
+        }
+        return `<span class="badge ${tradeBadgeClass(trade.status)} badge-sm">${trade.label}</span>`;
+      }
+
+      function tradeFromRealtimePosition(position) {
+        if (!position) return null;
+        return {
+          status: position.is_open ? "OPEN_TRADE" : "CLOSED_FOR_TODAY",
+          label: position.is_open ? "Open trade" : "Closed for today",
+          quantity: position.quantity,
+          entry_price: position.entry_price,
+          stoploss_price: position.stoploss_price,
+          trailing_stoploss_price: position.trailing_stoploss_price,
+          high_water_mark: position.high_water_mark,
+          exit_price: position.exit_price,
+          realized_pnl: position.realized_pnl,
+        };
+      }
+
       function renderLevelRows() {
         $("levelRows").innerHTML = levelDrafts.map((level, index) => `
           <div class="grid grid-cols-[76px_1fr_36px] items-center gap-2 rounded-lg border border-base-300 bg-base-200 px-3 py-2">
@@ -496,12 +546,12 @@
               <tr>
                 <td>
                   <div class="font-medium">${item.symbol}</div>
-                  <div class="text-xs text-base-content/60">${item.exchange}</div>
+                  <div class="text-xs text-base-content/60">${item.exchange}${item.instrument_type ? ` · ${item.instrument_type}` : ""}</div>
                 </td>
                 <td class="font-semibold">${item.last_price === null ? "-" : formatNumber(item.last_price)}</td>
                 <td>${item.levels.map((level) => `${level.level_name}:${formatNumber(level.price)}`).join(" · ")}</td>
                 <td>${item.last_tick_at ? displayIstTime(item.last_tick_at_ist, item.last_tick_at) : "Waiting"}</td>
-                <td><span class="badge ${item.last_price === null ? "badge-warning" : "badge-success"} badge-sm">${item.last_price === null ? "No tick" : "Live"}</span></td>
+                <td>${renderTradeState(item)}</td>
                 <td><button class="btn btn-xs btn-outline" data-monitor-instrument-id="${item.instrument_id}" type="button">Use</button></td>
               </tr>
             `).join("")
@@ -517,6 +567,7 @@
               id: item.instrument_id,
               symbol: item.symbol,
               exchange: item.exchange,
+              instrument_type: item.instrument_type,
               instrument_token: item.instrument_token,
               lot_size: 1,
             });
@@ -525,8 +576,9 @@
       }
 
       function applyRealtimeTick(message) {
-        if (message.type !== "tick" || !message.tick) return;
+        if (!["tick", "ltp"].includes(message.type) || !message.tick) return;
         const tick = message.tick;
+        const realtimeTrade = tradeFromRealtimePosition(message.position);
         latestPricesByInstrumentId.set(Number(tick.instrument_id), {
           instrument_id: tick.instrument_id,
           instrument_token: tick.instrument_token,
@@ -542,6 +594,7 @@
             last_price: tick.last_price,
             last_tick_at: tick.timestamp,
             last_tick_at_ist: tick.timestamp_ist,
+            trade: realtimeTrade || item.trade,
           };
         });
         renderTrackedInstruments(trackedInstrumentsState);
@@ -591,7 +644,10 @@
         $("positionsTable").innerHTML = positions.length
           ? positions.map((position) => `
               <tr>
-                <td>#${position.instrument_id}</td>
+                <td>
+                  <div class="font-medium">${position.symbol || `#${position.instrument_id}`}</div>
+                  <div class="text-xs text-base-content/60">${position.exchange || ""}${position.instrument_type ? ` · ${position.instrument_type}` : ""}</div>
+                </td>
                 <td>${formatNumber(position.entry_price)}</td>
                 <td>${formatNumber(position.trailing_stoploss_price)}</td>
                 <td>${formatNumber((position.trailing_stoploss_price - position.entry_price) * position.quantity)}</td>
@@ -607,7 +663,7 @@
                 <td>${displayIstTime(order.created_at_ist, order.created_at)}</td>
                 <td>
                   <div class="font-medium">${order.symbol}</div>
-                  <div class="text-xs text-base-content/60">${order.exchange}</div>
+                  <div class="text-xs text-base-content/60">${order.exchange}${order.instrument_type ? ` · ${order.instrument_type}` : ""}</div>
                 </td>
                 <td><span class="badge badge-sm ${order.side === "BUY" ? "badge-success" : "badge-warning"}">${order.side}</span></td>
                 <td>${formatNumber(order.price)}</td>
@@ -641,12 +697,13 @@
       async function loadInstruments() {
         const query = $("instrumentSearchInput")?.value?.trim() || "";
         const exchange = $("instrumentExchangeFilter")?.value || "";
+        const instrumentType = $("instrumentTypeFilter")?.value || "";
         if (query.length < 2) {
           hideInstrumentSuggestions();
           return;
         }
         const instruments = await api(
-          `/instruments?limit=100&query=${encodeURIComponent(query)}${exchange ? `&exchange=${exchange}` : ""}`
+          `/instruments?limit=100&query=${encodeURIComponent(query)}${exchange ? `&exchange=${exchange}` : ""}${instrumentType ? `&instrument_type=${instrumentType}` : ""}`
         );
         renderInstrumentSuggestions(instruments);
       }
@@ -670,12 +727,13 @@
             data-instrument-id="${instrument.id}"
             data-symbol="${instrument.symbol}"
             data-exchange="${instrument.exchange}"
+            data-instrument-type="${instrument.instrument_type || ""}"
             data-token="${instrument.instrument_token}"
             data-lot-size="${instrument.lot_size}"
             type="button"
           >
             <span class="font-medium">${instrument.symbol}</span>
-            <span class="text-xs text-base-content/60">${instrument.exchange}</span>
+            <span class="text-xs text-base-content/60">${instrument.exchange}${instrument.instrument_type ? ` · ${instrument.instrument_type}` : ""}</span>
           </button>
         `).join("");
         menu.classList.remove("hidden");
@@ -685,6 +743,7 @@
               id: Number(button.dataset.instrumentId),
               symbol: button.dataset.symbol,
               exchange: button.dataset.exchange,
+              instrument_type: button.dataset.instrumentType,
               instrument_token: Number(button.dataset.token),
               lot_size: Number(button.dataset.lotSize || 1),
             });
@@ -692,11 +751,40 @@
         });
       }
 
+      async function fetchSelectedInstrumentLtp(instrument) {
+        if (!instrument?.id) return;
+        $("selectedInstrumentTickTime").textContent = "Fetching...";
+        try {
+          const price = await api(`/zerodha/ltp?instrument_id=${instrument.id}`);
+          if (!selectedInstrument || Number(selectedInstrument.id) !== Number(instrument.id)) {
+            return;
+          }
+          latestPricesByInstrumentId.set(Number(price.instrument_id), price);
+          updateSelectedInstrumentPrice();
+          trackedInstrumentsState = trackedInstrumentsState.map((item) => {
+            if (Number(item.instrument_id) !== Number(price.instrument_id)) return item;
+            return {
+              ...item,
+              last_price: price.last_price,
+              last_tick_at: price.timestamp,
+              last_tick_at_ist: price.timestamp_ist,
+            };
+          });
+          renderTrackedInstruments(trackedInstrumentsState);
+        } catch (error) {
+          if (selectedInstrument && Number(selectedInstrument.id) === Number(instrument.id)) {
+            $("selectedInstrumentTickTime").textContent = "No live price";
+          }
+          setStatus(error.message, true);
+        }
+      }
+
       function selectInstrument(instrument, options = {}) {
         selectedInstrument = instrument;
-        $("selectedInstrumentText").textContent = `${instrument.symbol} · ${instrument.exchange}`;
+        $("selectedInstrumentText").textContent = `${instrument.symbol} · ${instrument.exchange}${instrument.instrument_type ? ` · ${instrument.instrument_type}` : ""}`;
         $("instrumentSearchInput").value = instrument.symbol;
         updateSelectedInstrumentPrice();
+        fetchSelectedInstrumentLtp(instrument);
         if (!options.keepEditing) {
           editingLevelSetId = null;
           $("saveLevelsBtn").textContent = "Save Today's Levels";
@@ -748,6 +836,7 @@
         $("streamBadge").className = status.running ? "badge badge-success" : "badge badge-outline";
         $("kiteWebsocketStatus").textContent = status.running ? "Running" : "Idle";
         $("kiteWebsocketStatus").className = status.running ? "badge badge-success" : "badge badge-outline";
+        return status;
       }
 
       async function refreshZerodhaStatus() {
@@ -773,15 +862,37 @@
         }
       }
 
-      async function syncInstruments() {
+      async function resetPaperTrades() {
+        if (!window.confirm("Reset today's paper trades and orders? Levels and instruments will stay.")) {
+          return;
+        }
         try {
-          setStatus("Syncing Zerodha instruments...");
-          const result = await api("/instruments/sync/zerodha?exchange=NFO,BFO&instrument_types=CE,PE", { method: "POST" });
-          hideInstrumentSuggestions();
-          setStatus(`Synced ${result.synced} instruments`);
+          setStatus("Resetting today's paper trades...");
+          const result = await api("/trading/paper-trades/reset-today", { method: "POST" });
+          await refreshDashboard();
+          setStatus(`Reset complete: ${result.positions_deleted} positions and ${result.orders_deleted} orders deleted`);
         } catch (error) {
           setStatus(error.message, true);
         }
+      }
+
+      async function syncInstruments() {
+        try {
+          setStatus("Syncing Zerodha instruments...");
+          const optionResult = await api("/instruments/sync/zerodha?exchange=NFO,BFO&instrument_types=CE,PE", { method: "POST" });
+          const commodityResult = await api("/instruments/sync/zerodha?exchange=MCX&instrument_types=FUT,CE,PE", { method: "POST" });
+          hideInstrumentSuggestions();
+          setStatus(`Synced ${optionResult.synced + commodityResult.synced} instruments`);
+        } catch (error) {
+          setStatus(error.message, true);
+        }
+      }
+
+      async function refreshRunningStreamSubscriptions() {
+        const status = await refreshStreamStatus();
+        if (!status.running) return;
+        await api("/zerodha/stream/start", { method: "POST" });
+        await refreshStreamStatus();
       }
 
       function todayIso() {
@@ -834,6 +945,9 @@
       $("instrumentExchangeFilter").addEventListener("change", () => {
         loadInstruments().catch((error) => setStatus(error.message, true));
       });
+      $("instrumentTypeFilter").addEventListener("change", () => {
+        loadInstruments().catch((error) => setStatus(error.message, true));
+      });
 
       $("levelForm").addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -871,6 +985,7 @@
           showActiveLevelPreview(savedLevelSet);
           await refreshDashboard();
           await loadLevelSets();
+          await refreshRunningStreamSubscriptions();
           setStatus(wasEditing ? "Levels updated" : "Levels saved");
         } catch (error) {
           setStatus(error.message, true);
@@ -913,6 +1028,7 @@
             await api(`/level-sets/${deleteButton.dataset.deleteLevelSet}`, { method: "DELETE" });
             await loadLevelSets();
             await refreshDashboard();
+            await refreshRunningStreamSubscriptions();
             if (editingLevelSetId === Number(deleteButton.dataset.deleteLevelSet)) resetLevelEditor();
             setStatus("Level set deleted");
           } catch (error) {
@@ -926,6 +1042,7 @@
       $("startStreamBtn").addEventListener("click", () => runAction("Starting Zerodha stream", "/zerodha/stream/start"));
       $("stopStreamBtn").addEventListener("click", () => runAction("Stopping stream", "/zerodha/stream/stop"));
       $("squareOffBtn").addEventListener("click", () => runAction("Running EOD square-off", "/trading/eod-square-off"));
+      $("resetPaperTradesBtn").addEventListener("click", resetPaperTrades);
       $("zerodhaStatusBtn").addEventListener("click", () => refreshZerodhaStatus().catch((error) => setStatus(error.message, true)));
       $("zerodhaLoginBtn").addEventListener("click", () => {
         window.location.href = `${API_BASE}/zerodha/login`;

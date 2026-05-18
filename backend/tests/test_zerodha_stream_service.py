@@ -19,6 +19,7 @@ class FakeStreamClient:
         self.token_map = token_map
         self.access_token = access_token
         self._ticker = None
+        self.updated_token_maps = []
 
     def start(self, instrument_tokens, on_tick) -> None:
         token = instrument_tokens[0]
@@ -40,6 +41,10 @@ class FakeStreamClient:
                 timestamp=datetime(2026, 5, 18, 9, 16),
             )
         )
+
+    def update_subscriptions(self, token_to_instrument_id) -> None:
+        self.token_map = token_to_instrument_id
+        self.updated_token_maps.append(token_to_instrument_id)
 
 
 def test_zerodha_stream_start_processes_ticks_into_paper_position(monkeypatch) -> None:
@@ -185,3 +190,87 @@ def test_zerodha_stream_refuses_malformed_levels(monkeypatch) -> None:
         raise AssertionError("Stream should refuse malformed levels")
     finally:
         db.close()
+
+
+def test_zerodha_stream_start_refreshes_running_subscriptions(monkeypatch) -> None:
+    tick_cache._latest_ticks.clear()
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+
+    db = TestingSessionLocal()
+    first_instrument = Instrument(
+        symbol="SENSEX_TEST_CE",
+        exchange="BFO",
+        instrument_token=1001,
+        lot_size=1,
+        tick_size=0.05,
+    )
+    db.add(first_instrument)
+    db.flush()
+    first_level_set = DailyLevelSet(
+        instrument_id=first_instrument.id,
+        trading_day=date.today(),
+        status=LevelSetStatus.ACTIVE.value,
+        created_by="test",
+        updated_by="test",
+    )
+    first_level_set.levels.extend(
+        [
+            Level(level_name="L0", price=100, sort_order=0, role="STOPLOSS"),
+            Level(level_name="L1", price=110, sort_order=1, role="ENTRY"),
+        ]
+    )
+    db.add(first_level_set)
+    save_zerodha_session(
+        db=db,
+        access_token="access-token",
+        public_token=None,
+        user_id="AB1234",
+        user_name="Test User",
+        trading_day=date.today(),
+    )
+    db.commit()
+
+    monkeypatch.setattr("backend.app.services.zerodha_stream.SessionLocal", TestingSessionLocal)
+    service = ZerodhaStreamService()
+    start_status = service.start(db, client_factory=FakeStreamClient)
+
+    second_instrument = Instrument(
+        symbol="CRUDEOIL26JUN9800CE",
+        exchange="MCX",
+        instrument_type="CE",
+        instrument_token=2002,
+        lot_size=1,
+        tick_size=0.1,
+    )
+    db.add(second_instrument)
+    db.flush()
+    second_level_set = DailyLevelSet(
+        instrument_id=second_instrument.id,
+        trading_day=date.today(),
+        status=LevelSetStatus.ACTIVE.value,
+        created_by="test",
+        updated_by="test",
+    )
+    second_level_set.levels.extend(
+        [
+            Level(level_name="L0", price=90, sort_order=0, role="STOPLOSS"),
+            Level(level_name="L1", price=100, sort_order=1, role="ENTRY"),
+        ]
+    )
+    db.add(second_level_set)
+    db.commit()
+
+    refresh_status = service.start(db, client_factory=FakeStreamClient)
+    db.close()
+
+    assert start_status["instrument_tokens"] == [1001]
+    assert refresh_status["subscription_refreshed"] is True
+    assert refresh_status["instrument_tokens"] == [1001, 2002]
+    assert refresh_status["added_tokens"] == [2002]
+    assert service.client.updated_token_maps[-1][2002] == second_instrument.id

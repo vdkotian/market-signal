@@ -18,6 +18,7 @@ def add_instrument(payload: InstrumentCreate, db: Session = Depends(get_db)):
         symbol=payload.symbol,
         exchange=payload.exchange,
         instrument_token=payload.instrument_token,
+        instrument_type=payload.instrument_type,
         lot_size=payload.lot_size,
         tick_size=payload.tick_size,
     )
@@ -27,6 +28,7 @@ def add_instrument(payload: InstrumentCreate, db: Session = Depends(get_db)):
 def get_instruments(
     query: str = "",
     exchange: str = "",
+    instrument_type: str = "",
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
@@ -34,14 +36,15 @@ def get_instruments(
         db,
         query=query or None,
         exchange=exchange or None,
+        instrument_type=instrument_type or None,
         limit=limit,
     )
 
 
 @router.post("/sync/zerodha")
 def sync_instruments_from_zerodha(
-    exchange: str = "NFO,BFO",
-    instrument_types: str = "CE,PE",
+    exchange: str = "NFO,BFO,MCX",
+    instrument_types: str = "CE,PE,FUT",
     limit: int = Query(default=0, ge=0, le=100000),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -52,9 +55,9 @@ def sync_instruments_from_zerodha(
         ]
         return sync_zerodha_option_exchanges(
             db=db,
-            exchanges=exchanges or ["NFO", "BFO"],
+            exchanges=exchanges or ["NFO", "BFO", "MCX"],
             limit=limit or None,
-            instrument_types=allowed_types or ["CE", "PE"],
+            instrument_types=allowed_types or ["CE", "PE", "FUT"],
         )
     except Exception as exc:
         raise HTTPException(status_code=409, detail=str(exc))

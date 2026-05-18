@@ -14,6 +14,7 @@ class Instrument(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     symbol: Mapped[str] = mapped_column(String(120), nullable=False)
     exchange: Mapped[str] = mapped_column(String(20), nullable=False)
+    instrument_type: Mapped[str] = mapped_column(String(20), default="", nullable=False)
     instrument_token: Mapped[int] = mapped_column(Integer, unique=True, nullable=False)
     lot_size: Mapped[int] = mapped_column(Integer, default=1)
     tick_size: Mapped[float] = mapped_column(Float, default=0.05)

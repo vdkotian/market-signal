@@ -1,20 +1,26 @@
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.broker.zerodha_market_data import ZerodhaNotConfiguredError
 from backend.app.broker.zerodha_session import ZerodhaSessionClient
 from backend.app.core.config import settings
+from backend.app.core.timezone import as_utc, display_ist_time, iso_utc
 from backend.app.db.broker_sessions import (
     deactivate_zerodha_session,
     get_active_zerodha_session,
     save_zerodha_session,
 )
 from backend.app.db.session import get_db
+from backend.app.dto.trading_dto import Tick
+from backend.app.market.tick_cache import tick_cache
+from backend.app.models.tables import Instrument
 from backend.app.schemas.zerodha import ZerodhaSessionRequest
-from backend.app.services.instrument_sync import sync_zerodha_option_exchanges
+from backend.app.services.instrument_sync import sync_zerodha_market_universe
+from backend.app.services.realtime import realtime_hub
 from backend.app.services.zerodha_stream import zerodha_stream_service
 
 router = APIRouter(prefix="/zerodha", tags=["zerodha"])
@@ -64,7 +70,7 @@ def zerodha_callback(request_token: str, db: Session = Depends(get_db)):
         trading_day=ZerodhaSessionClient.trading_day(),
     )
     try:
-        sync_zerodha_option_exchanges(db=db)
+        sync_zerodha_market_universe(db=db)
         return RedirectResponse(f"{settings.frontend_url}?zerodha=connected&sync=done")
     except Exception:
         return RedirectResponse(f"{settings.frontend_url}?zerodha=connected&sync=failed")
@@ -87,7 +93,7 @@ def zerodha_session(payload: ZerodhaSessionRequest, db: Session = Depends(get_db
     )
     sync_result = None
     try:
-        sync_result = sync_zerodha_option_exchanges(db=db)
+        sync_result = sync_zerodha_market_universe(db=db)
     except Exception as exc:
         sync_result = {"synced": 0, "error": str(exc)}
     return {
@@ -104,6 +110,52 @@ def zerodha_session(payload: ZerodhaSessionRequest, db: Session = Depends(get_db
 def zerodha_logout(db: Session = Depends(get_db)) -> dict:
     deactivated = deactivate_zerodha_session(db, date.today())
     return {"deactivated": deactivated}
+
+
+@router.get("/ltp")
+def zerodha_ltp(instrument_id: int, db: Session = Depends(get_db)) -> dict:
+    instrument = db.scalar(select(Instrument).where(Instrument.id == instrument_id))
+    if instrument is None:
+        raise HTTPException(status_code=404, detail="Instrument not found")
+
+    active_session = get_active_zerodha_session(db, ZerodhaSessionClient.trading_day())
+    if not active_session:
+        raise HTTPException(status_code=409, detail="Connect Zerodha before fetching live price")
+
+    try:
+        client = ZerodhaSessionClient(access_token=active_session.access_token)._client()
+        quote_key = f"{instrument.exchange}:{instrument.symbol}"
+        ltp_payload = client.ltp([quote_key])
+    except ZerodhaNotConfiguredError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=409, detail=f"Unable to fetch Zerodha LTP: {exc}")
+
+    quote = ltp_payload.get(quote_key)
+    if not quote or quote.get("last_price") is None:
+        raise HTTPException(status_code=404, detail="Zerodha did not return a price")
+
+    timestamp = as_utc(datetime.utcnow())
+    tick = Tick(
+        instrument_token=instrument.instrument_token,
+        instrument_id=instrument.id,
+        symbol=instrument.symbol,
+        last_price=float(quote["last_price"]),
+        timestamp=timestamp,
+    )
+    tick_cache.update(tick)
+    response = {
+        "instrument_id": instrument.id,
+        "instrument_token": instrument.instrument_token,
+        "symbol": instrument.symbol,
+        "exchange": instrument.exchange,
+        "instrument_type": instrument.instrument_type,
+        "last_price": tick.last_price,
+        "timestamp": iso_utc(timestamp),
+        "timestamp_ist": display_ist_time(timestamp),
+    }
+    realtime_hub.publish({"type": "ltp", "tick": response})
+    return response
 
 
 @router.post("/stream/start")

@@ -61,6 +61,13 @@ def instrument_search_tokens(query: str) -> List[str]:
     return tokens
 
 
+def instrument_search_month_tokens(query: str) -> List[str]:
+    normalized = query.upper()
+    for character in ("-", "_", "/", ",", ".", "(", ")"):
+        normalized = normalized.replace(character, " ")
+    return [token for token in normalized.split() if token in MONTH_QUERY_TOKENS]
+
+
 def create_instrument(
     db: Session,
     symbol: str,
@@ -68,10 +75,12 @@ def create_instrument(
     instrument_token: int,
     lot_size: int,
     tick_size: float,
+    instrument_type: str = "",
 ) -> Instrument:
     instrument = Instrument(
         symbol=symbol,
         exchange=exchange,
+        instrument_type=instrument_type.upper(),
         instrument_token=instrument_token,
         lot_size=lot_size,
         tick_size=tick_size,
@@ -89,12 +98,14 @@ def upsert_instrument(
     instrument_token: int,
     lot_size: int,
     tick_size: float,
+    instrument_type: str = "",
 ) -> Instrument:
     instrument = db.scalar(select(Instrument).where(Instrument.instrument_token == instrument_token))
     if instrument is None:
         instrument = Instrument(instrument_token=instrument_token)
     instrument.symbol = symbol
     instrument.exchange = exchange
+    instrument.instrument_type = instrument_type.upper()
     instrument.lot_size = lot_size
     instrument.tick_size = tick_size
     db.add(instrument)
@@ -105,16 +116,28 @@ def list_instruments(
     db: Session,
     query: Optional[str] = None,
     exchange: Optional[str] = None,
+    instrument_type: Optional[str] = None,
     limit: int = 100,
 ) -> List[Instrument]:
     statement = select(Instrument)
+    month_tokens = instrument_search_month_tokens(query or "")
     if query:
         for token in instrument_search_tokens(query):
             statement = statement.where(Instrument.symbol.ilike(f"%{token}%"))
     if exchange:
         statement = statement.where(Instrument.exchange == exchange.upper())
-    statement = statement.order_by(Instrument.symbol).limit(limit)
-    return list(db.scalars(statement).all())
+    if instrument_type:
+        statement = statement.where(Instrument.instrument_type == instrument_type.upper())
+    fetch_limit = limit * 5 if month_tokens else limit
+    instruments = list(db.scalars(statement.order_by(Instrument.symbol).limit(fetch_limit)).all())
+    if month_tokens:
+        instruments.sort(key=lambda item: (_month_match_rank(item.symbol, month_tokens), item.symbol))
+    return instruments[:limit]
+
+
+def _month_match_rank(symbol: str, month_tokens: List[str]) -> int:
+    normalized_symbol = symbol.upper()
+    return 0 if any(month in normalized_symbol for month in month_tokens) else 1
 
 
 def get_instrument_by_token(db: Session, instrument_token: int) -> Instrument:
@@ -187,6 +210,7 @@ def ensure_demo_level_set(
             db=db,
             symbol="DEMO_NIFTY_CE",
             exchange="NFO",
+            instrument_type="CE",
             instrument_token=instrument_token,
             lot_size=1,
             tick_size=0.05,

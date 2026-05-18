@@ -213,3 +213,69 @@ def test_mock_tick_endpoint_blocks_reentry_after_trade_is_closed() -> None:
     assert len(positions) == 1
     assert positions[0].status == PositionStatus.CLOSED.value
     assert [order.side for order in orders] == ["BUY", "SELL"]
+
+
+def test_mock_tick_endpoint_handles_mixed_timestamp_awareness() -> None:
+    tick_cache._latest_ticks.clear()
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+
+    db = TestingSessionLocal()
+    instrument = Instrument(
+        symbol="SENSEX_TEST_PE",
+        exchange="BFO",
+        instrument_token=3003,
+        lot_size=1,
+        tick_size=0.05,
+    )
+    db.add(instrument)
+    db.flush()
+    level_set = DailyLevelSet(
+        instrument_id=instrument.id,
+        trading_day=date.today(),
+        status=LevelSetStatus.ACTIVE.value,
+        created_by="test",
+        updated_by="test",
+    )
+    level_set.levels.extend(
+        [
+            Level(level_name="L0", price=100, sort_order=0, role="STOPLOSS"),
+            Level(level_name="L1", price=110, sort_order=1, role="ENTRY"),
+        ]
+    )
+    db.add(level_set)
+    db.commit()
+    db.close()
+
+    def override_db():
+        session = TestingSessionLocal()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_db] = override_db
+    client = TestClient(app)
+
+    first = client.post(
+        "/ticks/mock",
+        json={"instrument_token": 3003, "last_price": 108, "timestamp": "2026-05-18T09:15:00"},
+    )
+    second = client.post(
+        "/ticks/mock",
+        json={
+            "instrument_token": 3003,
+            "last_price": 109,
+            "timestamp": "2026-05-18T09:15:01+00:00",
+        },
+    )
+    app.dependency_overrides.clear()
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["direction"] == "UP"

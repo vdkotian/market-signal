@@ -9,7 +9,12 @@ from backend.app.db.repositories import upsert_instrument
 from backend.app.models.tables import AuditLog
 
 DEFAULT_OPTION_EXCHANGES = ("NFO", "BFO")
-DEFAULT_OPTION_INSTRUMENT_TYPES = ("CE", "PE")
+DEFAULT_OPTION_INSTRUMENT_TYPES = ("CE", "PE", "FUT")
+DEFAULT_MARKET_SYNC_PLAN = (
+    ("NFO", ("CE", "PE")),
+    ("BFO", ("CE", "PE")),
+    ("MCX", ("FUT", "CE", "PE")),
+)
 
 
 def sync_zerodha_instruments(
@@ -40,6 +45,7 @@ def sync_zerodha_instruments(
             instrument_token=int(token),
             lot_size=1,
             tick_size=float(row.get("tick_size") or 0.05),
+            instrument_type=instrument_type,
         )
         synced += 1
 
@@ -72,4 +78,26 @@ def sync_zerodha_option_exchanges(
         "synced": sum(int(result["synced"]) for result in results),
         "exchanges": results,
         "instrument_types": list(instrument_types),
+    }
+
+
+def sync_zerodha_market_universe(
+    db: Session,
+    limit: Optional[int] = None,
+) -> Dict[str, object]:
+    results = [
+        {
+            **sync_zerodha_instruments(
+                db=db,
+                exchange=exchange,
+                limit=limit,
+                instrument_types=instrument_types,
+            ),
+            "instrument_types": list(instrument_types),
+        }
+        for exchange, instrument_types in DEFAULT_MARKET_SYNC_PLAN
+    ]
+    return {
+        "synced": sum(int(result["synced"]) for result in results),
+        "exchanges": results,
     }

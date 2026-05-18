@@ -35,6 +35,19 @@ class ZerodhaMarketDataClient(MarketDataClient):
         )
         self._ticker.on_connect = lambda ws, response: ws.subscribe(instrument_tokens)
 
+    def update_subscriptions(self, token_to_instrument_id: Dict[int, int]) -> None:
+        previous_tokens = set(self.token_to_instrument_id)
+        next_tokens = set(token_to_instrument_id)
+        self.token_to_instrument_id = token_to_instrument_id
+        if not self._ticker:
+            return
+        added_tokens = sorted(next_tokens - previous_tokens)
+        removed_tokens = sorted(previous_tokens - next_tokens)
+        if added_tokens:
+            self._ticker.subscribe(added_tokens)
+        if removed_tokens:
+            self._ticker.unsubscribe(removed_tokens)
+
     def start(self, instrument_tokens: List[int], on_tick: Callable[[Tick], None]) -> None:
         self.subscribe(instrument_tokens)
 

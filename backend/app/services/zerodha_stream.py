@@ -25,6 +25,7 @@ class ZerodhaStreamService:
         self.last_error: Optional[str] = None
         self.processed_ticks = 0
         self.client = None
+        self.client_factory = None
 
     def status(self) -> Dict[str, object]:
         return {
@@ -40,7 +41,7 @@ class ZerodhaStreamService:
         client_factory: Callable[[Dict[int, int], str], ZerodhaMarketDataClient] = ZerodhaMarketDataClient,
     ) -> Dict[str, object]:
         if self.running:
-            return self.status()
+            return self.refresh_subscriptions(db)
 
         if settings.trading_mode != TradingMode.PAPER:
             raise ZerodhaNotConfiguredError("Zerodha stream is allowed only in PAPER mode")
@@ -61,10 +62,47 @@ class ZerodhaStreamService:
 
         self.instrument_tokens = sorted(token_map.keys())
         self.last_error = None
+        self.client_factory = client_factory
         self.client = client_factory(token_map, session.access_token)
         self.client.start(self.instrument_tokens, self._handle_tick)
         self.running = True
         return self.status()
+
+    def refresh_subscriptions(self, db: Session) -> Dict[str, object]:
+        if not self.running:
+            return self.status()
+
+        token_map = self._active_token_map(db)
+        previous_tokens = set(self.instrument_tokens)
+        next_tokens = set(token_map.keys())
+        if self.client and hasattr(self.client, "update_subscriptions"):
+            self.client.update_subscriptions(token_map)
+        elif self.client and getattr(self.client, "_ticker", None):
+            added_tokens = sorted(next_tokens - previous_tokens)
+            removed_tokens = sorted(previous_tokens - next_tokens)
+            if added_tokens:
+                self.client._ticker.subscribe(added_tokens)
+            if removed_tokens and hasattr(self.client._ticker, "unsubscribe"):
+                self.client._ticker.unsubscribe(removed_tokens)
+            if hasattr(self.client, "token_to_instrument_id"):
+                self.client.token_to_instrument_id = token_map
+        self.instrument_tokens = sorted(next_tokens)
+        self.last_error = None
+        status = self.status()
+        status["subscription_refreshed"] = True
+        status["added_tokens"] = sorted(next_tokens - previous_tokens)
+        status["removed_tokens"] = sorted(previous_tokens - next_tokens)
+        return status
+
+    def _active_token_map(self, db: Session) -> Dict[int, int]:
+        trading_day = date.today()
+        token_map = get_active_instrument_token_map(db, trading_day)
+        if not token_map:
+            raise ZerodhaNotConfiguredError("No active instruments with levels for today")
+        level_errors = validate_active_level_sets(db, trading_day)
+        if level_errors:
+            raise ZerodhaNotConfiguredError("; ".join(level_errors))
+        return token_map
 
     def stop(self) -> Dict[str, object]:
         if self.client and getattr(self.client, "_ticker", None):
