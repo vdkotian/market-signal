@@ -90,10 +90,10 @@
                     <tr>
                       <th>Instrument</th>
                       <th>LTP</th>
-                      <th>Direction</th>
-                      <th>Nearest</th>
+                      <th>Levels</th>
+                      <th>Last Tick</th>
                       <th>State</th>
-                      <th>Trail SL</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody id="pricesTable">
@@ -117,9 +117,16 @@
                     <div class="text-sm font-medium">Instrument</div>
                     <div class="text-xs text-base-content/60">Zerodha synced</div>
                   </div>
-                  <div class="relative">
-                    <input id="instrumentSearchInput" class="input input-bordered w-full" placeholder="Type instrument symbol" autocomplete="off" />
-                    <div id="instrumentSuggestions" class="absolute z-40 mt-1 hidden max-h-64 w-full overflow-auto rounded-lg border border-base-300 bg-base-100 shadow"></div>
+                  <div class="grid grid-cols-[112px_1fr] gap-2">
+                    <select id="instrumentExchangeFilter" class="select select-bordered">
+                      <option value="">All</option>
+                      <option value="NFO">NFO</option>
+                      <option value="BFO">BFO</option>
+                    </select>
+                    <div class="relative">
+                      <input id="instrumentSearchInput" class="input input-bordered w-full" placeholder="Type instrument symbol" autocomplete="off" />
+                      <div id="instrumentSuggestions" class="absolute z-40 mt-1 hidden max-h-64 w-full overflow-auto rounded-lg border border-base-300 bg-base-100 shadow"></div>
+                    </div>
                   </div>
                   <div class="flex items-center justify-between rounded-lg border border-base-300 bg-base-200 px-3 py-2">
                     <div>
@@ -128,9 +135,21 @@
                     </div>
                     <span class="badge badge-ghost">Today</span>
                   </div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <div class="rounded-lg border border-base-300 px-3 py-2">
+                      <div class="text-xs text-base-content/60">Active Price</div>
+                      <div id="selectedInstrumentPrice" class="text-xl font-semibold">-</div>
+                    </div>
+                    <div class="rounded-lg border border-base-300 px-3 py-2">
+                      <div class="text-xs text-base-content/60">Last Tick</div>
+                      <div id="selectedInstrumentTickTime" class="text-sm font-medium">Waiting</div>
+                    </div>
+                  </div>
+                  <div id="activeLevelPreview" class="hidden rounded-lg border border-base-300 px-3 py-2"></div>
                 </div>
 
                 <form id="levelForm" class="grid gap-3 rounded-lg border border-base-300 p-3">
+                  <div id="levelEditBanner" class="hidden rounded-md bg-primary/10 px-3 py-2 text-sm font-medium text-primary"></div>
                   <div class="flex items-center justify-between">
                     <div>
                       <div class="text-sm font-medium">Levels</div>
@@ -139,7 +158,7 @@
                     <button class="btn btn-outline btn-sm" id="addLevelBtn" type="button">+ Target</button>
                   </div>
                   <div class="grid gap-2" id="levelRows"></div>
-                  <button class="btn btn-primary btn-sm w-full" type="submit">Save Today's Levels</button>
+                  <button class="btn btn-primary btn-sm w-full" id="saveLevelsBtn" type="submit">Save Today's Levels</button>
                 </form>
 
                 <form id="mockTickForm" class="grid gap-3 rounded-lg border border-base-300 p-3">
@@ -194,21 +213,8 @@
               </div>
               <button id="refreshLevelsBtn" class="btn btn-outline btn-sm" type="button">Refresh Levels</button>
             </div>
-            <div class="overflow-x-auto">
-              <table class="table table-sm">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Instrument</th>
-                    <th>Status</th>
-                    <th>Levels</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody id="levelSetsTable">
-                  <tr><td colspan="5" class="text-base-content/60">No level sets loaded.</td></tr>
-                </tbody>
-              </table>
+            <div id="levelSetsTable" class="grid gap-2 p-3">
+              <div class="text-sm text-base-content/60">No level sets loaded.</div>
             </div>
           </section>
 
@@ -228,6 +234,7 @@
               <div class="border-b border-base-300 px-4 py-3">
                 <h2 class="font-semibold">Paper Trades</h2>
               </div>
+              <div class="border-b border-base-300 px-4 py-2 text-sm font-medium">Open Positions</div>
               <div class="overflow-x-auto">
                 <table class="table table-sm">
                   <thead>
@@ -241,6 +248,23 @@
                   </thead>
                   <tbody id="positionsTable">
                     <tr><td colspan="5" class="text-base-content/60">No open positions.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="border-y border-base-300 px-4 py-2 text-sm font-medium">Recent Orders</div>
+              <div class="overflow-x-auto">
+                <table class="table table-sm">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Instrument</th>
+                      <th>Side</th>
+                      <th>Price</th>
+                      <th>Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody id="ordersTable">
+                    <tr><td colspan="5" class="text-base-content/60">No recent orders.</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -270,10 +294,17 @@
     </div>
     <script>
       const API_BASE = "http://127.0.0.1:8000";
+      const WS_BASE = API_BASE.replace(/^http/, "ws");
 
       const $ = (id) => document.getElementById(id);
       let selectedInstrument = null;
       let instrumentSearchTimer = null;
+      let editingLevelSetId = null;
+      let todayLevelSets = [];
+      let latestPricesByInstrumentId = new Map();
+      let trackedInstrumentsState = [];
+      let priceSocket = null;
+      let priceSocketReconnectTimer = null;
       let levelDrafts = [
         { level_name: "L0", price: "", role: "STOPLOSS" },
         { level_name: "L1", price: "", role: "ENTRY" },
@@ -303,10 +334,80 @@
         return Number(value || 0).toFixed(2);
       }
 
+      function formatIstTime(value) {
+        if (!value) return "-";
+        const timestamp = String(value);
+        const hasTimezone = /Z$|[+-]\d{2}:\d{2}$/.test(timestamp);
+        const date = new Date(hasTimezone ? timestamp : `${timestamp}Z`);
+        return date.toLocaleTimeString("en-IN", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+          timeZone: "Asia/Kolkata",
+        });
+      }
+
+      function displayIstTime(displayValue, rawValue) {
+        if (displayValue) return displayValue;
+        const formatted = formatIstTime(rawValue);
+        return formatted === "-" ? "-" : `${formatted} IST`;
+      }
+
       function levelRoleLabel(level) {
         if (level.level_name === "L0") return "Stoploss";
         if (level.level_name === "L1") return "Entry";
         return "Target";
+      }
+
+      function levelBadgeClass(level) {
+        if (level.level_name === "L0") return "badge-error";
+        if (level.level_name === "L1") return "badge-primary";
+        return "badge-success";
+      }
+
+      function renderLevelPills(levels) {
+        return levels
+          .slice()
+          .sort((left, right) => left.sort_order - right.sort_order)
+          .map((level) => `
+            <div class="rounded-lg border border-base-300 bg-base-100 px-3 py-2">
+              <div class="flex items-center justify-between gap-3">
+                <span class="badge ${levelBadgeClass(level)} badge-sm">${level.level_name}</span>
+                <span class="font-semibold">${formatNumber(level.price)}</span>
+              </div>
+              <div class="mt-1 text-xs text-base-content/60">${levelRoleLabel(level)}</div>
+            </div>
+          `).join("");
+      }
+
+      function showActiveLevelPreview(levelSet) {
+        const preview = $("activeLevelPreview");
+        if (!levelSet) {
+          preview.classList.add("hidden");
+          preview.innerHTML = "";
+          return;
+        }
+        preview.innerHTML = `
+          <div class="mb-2 flex items-center justify-between">
+            <div class="text-xs font-medium uppercase text-base-content/60">Saved Setup</div>
+            <span class="badge badge-success badge-sm">${levelSet.status}</span>
+          </div>
+          <div class="grid gap-2 sm:grid-cols-3">${renderLevelPills(levelSet.levels)}</div>
+        `;
+        preview.classList.remove("hidden");
+      }
+
+      function renderInlineLevels(levels) {
+        return levels
+          .slice()
+          .sort((left, right) => left.sort_order - right.sort_order)
+          .map((level) => `
+            <span class="whitespace-nowrap">
+              <span class="font-medium">${level.level_name}</span>
+              <span class="text-base-content/70">${formatNumber(level.price)}</span>
+            </span>
+          `).join(`<span class="text-base-content/30">/</span>`);
       }
 
       function renderLevelRows() {
@@ -369,6 +470,109 @@
         }));
       }
 
+      function resetSelectedInstrumentPrice() {
+        $("selectedInstrumentPrice").textContent = "-";
+        $("selectedInstrumentTickTime").textContent = "Waiting";
+      }
+
+      function updateSelectedInstrumentPrice() {
+        if (!selectedInstrument?.id) {
+          resetSelectedInstrumentPrice();
+          return;
+        }
+        const price = latestPricesByInstrumentId.get(Number(selectedInstrument.id));
+        if (!price) {
+          $("selectedInstrumentPrice").textContent = "-";
+          $("selectedInstrumentTickTime").textContent = "No tick yet";
+          return;
+        }
+        $("selectedInstrumentPrice").textContent = formatNumber(price.last_price);
+        $("selectedInstrumentTickTime").textContent = displayIstTime(price.timestamp_ist, price.timestamp);
+      }
+
+      function renderTrackedInstruments(items) {
+        $("pricesTable").innerHTML = items.length
+          ? items.map((item) => `
+              <tr>
+                <td>
+                  <div class="font-medium">${item.symbol}</div>
+                  <div class="text-xs text-base-content/60">${item.exchange}</div>
+                </td>
+                <td class="font-semibold">${item.last_price === null ? "-" : formatNumber(item.last_price)}</td>
+                <td>${item.levels.map((level) => `${level.level_name}:${formatNumber(level.price)}`).join(" · ")}</td>
+                <td>${item.last_tick_at ? displayIstTime(item.last_tick_at_ist, item.last_tick_at) : "Waiting"}</td>
+                <td><span class="badge ${item.last_price === null ? "badge-warning" : "badge-success"} badge-sm">${item.last_price === null ? "No tick" : "Live"}</span></td>
+                <td><button class="btn btn-xs btn-outline" data-monitor-instrument-id="${item.instrument_id}" type="button">Use</button></td>
+              </tr>
+            `).join("")
+          : `<tr><td colspan="6" class="text-base-content/60">No active level instruments loaded.</td></tr>`;
+
+        document.querySelectorAll("[data-monitor-instrument-id]").forEach((button) => {
+          button.addEventListener("click", () => {
+            const item = trackedInstrumentsState.find(
+              (trackedItem) => trackedItem.instrument_id === Number(button.dataset.monitorInstrumentId)
+            );
+            if (!item) return;
+            selectInstrument({
+              id: item.instrument_id,
+              symbol: item.symbol,
+              exchange: item.exchange,
+              instrument_token: item.instrument_token,
+              lot_size: 1,
+            });
+          });
+        });
+      }
+
+      function applyRealtimeTick(message) {
+        if (message.type !== "tick" || !message.tick) return;
+        const tick = message.tick;
+        latestPricesByInstrumentId.set(Number(tick.instrument_id), {
+          instrument_id: tick.instrument_id,
+          instrument_token: tick.instrument_token,
+          symbol: tick.symbol,
+          last_price: tick.last_price,
+          timestamp: tick.timestamp,
+          timestamp_ist: tick.timestamp_ist,
+        });
+        trackedInstrumentsState = trackedInstrumentsState.map((item) => {
+          if (Number(item.instrument_id) !== Number(tick.instrument_id)) return item;
+          return {
+            ...item,
+            last_price: tick.last_price,
+            last_tick_at: tick.timestamp,
+            last_tick_at_ist: tick.timestamp_ist,
+          };
+        });
+        renderTrackedInstruments(trackedInstrumentsState);
+        updateSelectedInstrumentPrice();
+      }
+
+      function connectPriceSocket() {
+        if (priceSocket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(priceSocket.readyState)) {
+          return;
+        }
+        priceSocket = new WebSocket(`${WS_BASE}/ws/prices`);
+        priceSocket.onopen = () => {
+          setStatus("Live price socket connected");
+        };
+        priceSocket.onmessage = (event) => {
+          try {
+            applyRealtimeTick(JSON.parse(event.data));
+          } catch (error) {
+            setStatus(error.message, true);
+          }
+        };
+        priceSocket.onclose = () => {
+          setStatus("Live price socket disconnected", true);
+          clearTimeout(priceSocketReconnectTimer);
+          priceSocketReconnectTimer = setTimeout(connectPriceSocket, 2000);
+        };
+        priceSocket.onerror = () => {
+          priceSocket.close();
+        };
+      }
+
       function renderSummary(summary) {
         $("latestPricesCount").textContent = summary.counts.latest_prices || 0;
         $("openPositionsCount").textContent = summary.counts.open_positions || 0;
@@ -376,18 +580,12 @@
         $("trailLocked").textContent = formatNumber(summary.pnl.open_trailing_locked);
 
         const prices = summary.latest_prices || [];
-        $("pricesTable").innerHTML = prices.length
-          ? prices.map((price) => `
-              <tr>
-                <td class="font-medium">${price.symbol}</td>
-                <td>${formatNumber(price.last_price)}</td>
-                <td><span class="badge badge-outline badge-sm">LIVE</span></td>
-                <td>-</td>
-                <td><span class="badge badge-ghost badge-sm">TRACK</span></td>
-                <td>-</td>
-              </tr>
-            `).join("")
-          : `<tr><td colspan="6" class="text-base-content/60">No prices loaded.</td></tr>`;
+        latestPricesByInstrumentId = new Map(
+          prices.map((price) => [Number(price.instrument_id), price])
+        );
+        updateSelectedInstrumentPrice();
+        trackedInstrumentsState = summary.tracked_instruments || [];
+        renderTrackedInstruments(trackedInstrumentsState);
 
         const positions = summary.open_positions || [];
         $("positionsTable").innerHTML = positions.length
@@ -402,12 +600,28 @@
             `).join("")
           : `<tr><td colspan="5" class="text-base-content/60">No open positions.</td></tr>`;
 
+        const orders = summary.orders || [];
+        $("ordersTable").innerHTML = orders.length
+          ? orders.map((order) => `
+              <tr>
+                <td>${displayIstTime(order.created_at_ist, order.created_at)}</td>
+                <td>
+                  <div class="font-medium">${order.symbol}</div>
+                  <div class="text-xs text-base-content/60">${order.exchange}</div>
+                </td>
+                <td><span class="badge badge-sm ${order.side === "BUY" ? "badge-success" : "badge-warning"}">${order.side}</span></td>
+                <td>${formatNumber(order.price)}</td>
+                <td>${order.reason}</td>
+              </tr>
+            `).join("")
+          : `<tr><td colspan="5" class="text-base-content/60">No recent orders.</td></tr>`;
+
         const events = summary.audit_events || [];
         $("auditTimeline").innerHTML = events.length
           ? events.slice(0, 8).map((event, index) => `
               <li>
                 ${index > 0 ? "<hr />" : ""}
-                <div class="timeline-start text-xs">${new Date(event.created_at).toLocaleTimeString()}</div>
+                <div class="timeline-start text-xs">${displayIstTime(event.created_at_ist, event.created_at)}</div>
                 <div class="timeline-middle h-3 w-3 rounded-full bg-primary"></div>
                 <div class="timeline-end timeline-box">${event.event_type}: ${event.message}</div>
                 ${index < events.length - 1 ? "<hr />" : ""}
@@ -426,11 +640,14 @@
 
       async function loadInstruments() {
         const query = $("instrumentSearchInput")?.value?.trim() || "";
+        const exchange = $("instrumentExchangeFilter")?.value || "";
         if (query.length < 2) {
           hideInstrumentSuggestions();
           return;
         }
-        const instruments = await api(`/instruments?limit=100${query ? `&query=${encodeURIComponent(query)}` : ""}`);
+        const instruments = await api(
+          `/instruments?limit=100&query=${encodeURIComponent(query)}${exchange ? `&exchange=${exchange}` : ""}`
+        );
         renderInstrumentSuggestions(instruments);
       }
 
@@ -475,11 +692,54 @@
         });
       }
 
-      function selectInstrument(instrument) {
+      function selectInstrument(instrument, options = {}) {
         selectedInstrument = instrument;
         $("selectedInstrumentText").textContent = `${instrument.symbol} · ${instrument.exchange}`;
         $("instrumentSearchInput").value = instrument.symbol;
+        updateSelectedInstrumentPrice();
+        if (!options.keepEditing) {
+          editingLevelSetId = null;
+          $("saveLevelsBtn").textContent = "Save Today's Levels";
+        }
         hideInstrumentSuggestions();
+      }
+
+      function resetLevelEditor() {
+        editingLevelSetId = null;
+        selectedInstrument = null;
+        $("selectedInstrumentText").textContent = "No instrument selected";
+        resetSelectedInstrumentPrice();
+        $("instrumentSearchInput").value = "";
+        $("saveLevelsBtn").textContent = "Save Today's Levels";
+        $("levelEditBanner").classList.add("hidden");
+        $("levelEditBanner").textContent = "";
+        showActiveLevelPreview(null);
+        levelDrafts = [
+          { level_name: "L0", price: "", role: "STOPLOSS" },
+          { level_name: "L1", price: "", role: "ENTRY" },
+          { level_name: "L2", price: "", role: "CHECKPOINT" },
+        ];
+        renderLevelRows();
+      }
+
+      function editLevelSet(levelSet) {
+        editingLevelSetId = levelSet.id;
+        selectInstrument(levelSet.instrument, { keepEditing: true });
+        levelDrafts = levelSet.levels
+          .slice()
+          .sort((left, right) => left.sort_order - right.sort_order)
+          .map((level, index) => ({
+            level_name: `L${index}`,
+            price: level.price,
+            role: index === 0 ? "STOPLOSS" : index === 1 ? "ENTRY" : "CHECKPOINT",
+          }));
+        $("saveLevelsBtn").textContent = "Update Today's Levels";
+        $("levelEditBanner").textContent = `Editing Set #${levelSet.id} · ${levelSet.instrument.symbol}`;
+        $("levelEditBanner").classList.remove("hidden");
+        renderLevelRows();
+        showActiveLevelPreview(levelSet);
+        setStatus(`Editing levels for ${levelSet.instrument.symbol}`);
+        $("levelForm").scrollIntoView({ behavior: "smooth", block: "center" });
       }
 
       async function refreshStreamStatus() {
@@ -516,7 +776,7 @@
       async function syncInstruments() {
         try {
           setStatus("Syncing Zerodha instruments...");
-          const result = await api("/instruments/sync/zerodha?exchange=NFO", { method: "POST" });
+          const result = await api("/instruments/sync/zerodha?exchange=NFO,BFO&instrument_types=CE,PE", { method: "POST" });
           hideInstrumentSuggestions();
           setStatus(`Synced ${result.synced} instruments`);
         } catch (error) {
@@ -529,35 +789,35 @@
       }
 
       async function loadLevelSets() {
-        const levelSets = await api(`/level-sets?trading_day=${todayIso()}`);
-        $("levelSetsTable").innerHTML = levelSets.length
-          ? levelSets.map((set) => `
-              <tr>
-                <td>#${set.id}</td>
-                <td>#${set.instrument_id}</td>
-                <td><span class="badge badge-sm ${set.status === "ACTIVE" ? "badge-success" : "badge-outline"}">${set.status}</span></td>
-                <td>${set.levels.map((level) => `${level.level_name}:${formatNumber(level.price)}`).join(" · ")}</td>
-                <td>
+        todayLevelSets = await api(`/level-sets?trading_day=${todayIso()}`);
+        $("levelSetsTable").innerHTML = todayLevelSets.length
+          ? todayLevelSets.map((set) => `
+              <div class="grid items-center gap-2 rounded-md border border-base-300 bg-base-100 px-3 py-2 md:grid-cols-[minmax(180px,1.2fr)_auto_minmax(240px,2fr)_auto]">
+                <div class="min-w-0">
+                  <div class="truncate text-sm font-semibold">${set.instrument?.symbol || `#${set.instrument_id}`}</div>
+                  <div class="text-xs text-base-content/60">${set.instrument?.exchange || ""}</div>
+                </div>
+                <span class="badge badge-sm ${set.status === "ACTIVE" ? "badge-success" : "badge-outline"}">${set.status}</span>
+                <div class="flex min-w-0 flex-wrap items-center gap-1 text-sm">${renderInlineLevels(set.levels)}</div>
+                <div class="flex justify-end gap-1">
                   ${set.status === "ACTIVE"
-                    ? `<button class="btn btn-xs btn-outline" data-cancel-level-set="${set.id}" type="button">Cancel</button>`
+                    ? `
+                      <button class="btn btn-xs btn-outline" data-edit-level-set="${set.id}" type="button">Edit</button>
+                      <button class="btn btn-xs btn-error btn-outline" data-delete-level-set="${set.id}" type="button">Delete</button>
+                    `
                     : ""}
-                </td>
-              </tr>
+                </div>
+              </div>
             `).join("")
-          : `<tr><td colspan="5" class="text-base-content/60">No level sets loaded.</td></tr>`;
+          : `<div class="text-sm text-base-content/60">No level sets loaded.</div>`;
 
-        document.querySelectorAll("[data-cancel-level-set]").forEach((button) => {
-          button.addEventListener("click", async () => {
-            try {
-              setStatus("Cancelling level set...");
-              await api(`/level-sets/${button.dataset.cancelLevelSet}/cancel`, { method: "POST" });
-              await loadLevelSets();
-              setStatus("Level set cancelled");
-            } catch (error) {
-              setStatus(error.message, true);
-            }
-          });
-        });
+      }
+
+      async function findActiveLevelSetForInstrument(instrumentId) {
+        const levelSets = await api(
+          `/level-sets?trading_day=${todayIso()}&instrument_id=${instrumentId}`
+        );
+        return levelSets.find((set) => set.status === "ACTIVE") || null;
       }
 
       $("instrumentSearchInput").addEventListener("input", () => {
@@ -571,25 +831,47 @@
           hideInstrumentSuggestions();
         }
       });
+      $("instrumentExchangeFilter").addEventListener("change", () => {
+        loadInstruments().catch((error) => setStatus(error.message, true));
+      });
 
       $("levelForm").addEventListener("submit", async (event) => {
         event.preventDefault();
         try {
           const instrumentId = selectedInstrument?.id;
-          if (!instrumentId) throw new Error("Create or select an instrument first");
-          setStatus("Saving levels...");
-          await api("/level-sets", {
-            method: "POST",
-            body: JSON.stringify({
-              instrument_id: instrumentId,
-              trading_day: todayIso(),
-              created_by: "dashboard",
-              levels: buildLevelPayload(),
-            }),
-          });
+          if (!instrumentId) throw new Error("Select an instrument first");
+          const levels = buildLevelPayload();
+          const existingLevelSet = editingLevelSetId
+            ? null
+            : await findActiveLevelSetForInstrument(instrumentId);
+          if (existingLevelSet) {
+            throw new Error("Levels already exist for this instrument today. Click Edit in Today’s Level Sets to update them.");
+          }
+          const wasEditing = Boolean(editingLevelSetId);
+          setStatus(wasEditing ? "Updating levels..." : "Saving levels...");
+          const savedLevelSet = wasEditing
+            ? await api(`/level-sets/${editingLevelSetId}`, {
+                method: "PUT",
+                body: JSON.stringify({
+                  updated_by: "dashboard",
+                  levels,
+                }),
+              })
+            : await api("/level-sets", {
+                method: "POST",
+                body: JSON.stringify({
+                  instrument_id: instrumentId,
+                  trading_day: todayIso(),
+                  created_by: "dashboard",
+                  levels,
+                }),
+              });
+          editingLevelSetId = savedLevelSet.id;
+          $("saveLevelsBtn").textContent = "Update Today's Levels";
+          showActiveLevelPreview(savedLevelSet);
           await refreshDashboard();
           await loadLevelSets();
-          setStatus("Levels saved");
+          setStatus(wasEditing ? "Levels updated" : "Levels saved");
         } catch (error) {
           setStatus(error.message, true);
         }
@@ -617,6 +899,27 @@
       $("runDemoBtn").addEventListener("click", () => runAction("Running demo simulation", "/simulations/demo"));
       $("refreshBtn").addEventListener("click", refreshDashboard);
       $("refreshLevelsBtn").addEventListener("click", () => loadLevelSets().catch((error) => setStatus(error.message, true)));
+      $("levelSetsTable").addEventListener("click", async (event) => {
+        const editButton = event.target.closest("[data-edit-level-set]");
+        const deleteButton = event.target.closest("[data-delete-level-set]");
+        if (editButton) {
+          const levelSet = todayLevelSets.find((set) => set.id === Number(editButton.dataset.editLevelSet));
+          if (levelSet) editLevelSet(levelSet);
+          return;
+        }
+        if (deleteButton) {
+          try {
+            setStatus("Deleting level set...");
+            await api(`/level-sets/${deleteButton.dataset.deleteLevelSet}`, { method: "DELETE" });
+            await loadLevelSets();
+            await refreshDashboard();
+            if (editingLevelSetId === Number(deleteButton.dataset.deleteLevelSet)) resetLevelEditor();
+            setStatus("Level set deleted");
+          } catch (error) {
+            setStatus(error.message, true);
+          }
+        }
+      });
       $("addLevelBtn").addEventListener("click", addLevelRow);
       $("syncInstrumentsBtn").addEventListener("click", syncInstruments);
       $("tableRefreshBtn").addEventListener("click", refreshDashboard);
@@ -631,6 +934,7 @@
       $("zerodhaStopBtn").addEventListener("click", () => runAction("Stopping stream", "/zerodha/stream/stop"));
 
       renderLevelRows();
+      connectPriceSocket();
       refreshDashboard()
         .then(loadLevelSets)
         .then(refreshZerodhaStatus)

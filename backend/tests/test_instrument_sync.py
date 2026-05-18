@@ -32,17 +32,31 @@ def test_zerodha_instrument_sync_and_search(monkeypatch) -> None:
         def instruments(self, exchange: str = None) -> list:
             return [
                 {
-                    "instrument_token": 111,
-                    "tradingsymbol": "NIFTY26MAY22000CE",
+                    "instrument_token": 111 if exchange == "NFO" else 333,
+                    "tradingsymbol": "NIFTY26MAY22000CE"
+                    if exchange == "NFO"
+                    else "SENSEX26MAY74000CE",
                     "exchange": exchange or "NFO",
+                    "instrument_type": "CE",
                     "lot_size": 50,
                     "tick_size": 0.05,
                 },
                 {
-                    "instrument_token": 222,
-                    "tradingsymbol": "BANKNIFTY26MAY48000PE",
+                    "instrument_token": 222 if exchange == "NFO" else 444,
+                    "tradingsymbol": "BANKNIFTY26MAY48000PE"
+                    if exchange == "NFO"
+                    else "SENSEX2652175500PE",
                     "exchange": exchange or "NFO",
+                    "instrument_type": "PE",
                     "lot_size": 15,
+                    "tick_size": 0.05,
+                },
+                {
+                    "instrument_token": 999,
+                    "tradingsymbol": f"{exchange or 'NFO'}_FUT",
+                    "exchange": exchange or "NFO",
+                    "instrument_type": "FUT",
+                    "lot_size": 1,
                     "tick_size": 0.05,
                 },
             ]
@@ -70,12 +84,21 @@ def test_zerodha_instrument_sync_and_search(monkeypatch) -> None:
     app.dependency_overrides[get_db] = override_db
     client = TestClient(app)
 
-    sync_response = client.post("/instruments/sync/zerodha?exchange=NFO")
-    search_response = client.get("/instruments?query=NIFTY")
+    sync_response = client.post("/instruments/sync/zerodha?exchange=NFO,BFO")
+    bfo_sync_response = client.post("/instruments/sync/zerodha?exchange=BFO")
+    search_response = client.get("/instruments?query=SENSEX&exchange=BFO")
+    natural_search_response = client.get(
+        "/instruments?query=SENSEX%2021%20MAY%2075500%20PUT&exchange=BFO"
+    )
     app.dependency_overrides.clear()
 
     assert sync_response.status_code == 200
-    assert sync_response.json()["synced"] == 2
+    assert sync_response.json()["synced"] == 4
+    assert bfo_sync_response.status_code == 200
+    assert bfo_sync_response.json()["synced"] == 2
     assert search_response.status_code == 200
     assert len(search_response.json()) == 2
-    assert search_response.json()[0]["instrument_token"] == 222
+    assert search_response.json()[0]["exchange"] == "BFO"
+    assert search_response.json()[0]["lot_size"] == 1
+    assert natural_search_response.status_code == 200
+    assert natural_search_response.json()[0]["symbol"] == "SENSEX2652175500PE"

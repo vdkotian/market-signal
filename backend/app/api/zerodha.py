@@ -14,7 +14,7 @@ from backend.app.db.broker_sessions import (
 )
 from backend.app.db.session import get_db
 from backend.app.schemas.zerodha import ZerodhaSessionRequest
-from backend.app.services.instrument_sync import sync_zerodha_instruments
+from backend.app.services.instrument_sync import sync_zerodha_option_exchanges
 from backend.app.services.zerodha_stream import zerodha_stream_service
 
 router = APIRouter(prefix="/zerodha", tags=["zerodha"])
@@ -64,7 +64,7 @@ def zerodha_callback(request_token: str, db: Session = Depends(get_db)):
         trading_day=ZerodhaSessionClient.trading_day(),
     )
     try:
-        sync_zerodha_instruments(db=db, exchange="NFO")
+        sync_zerodha_option_exchanges(db=db)
         return RedirectResponse(f"{settings.frontend_url}?zerodha=connected&sync=done")
     except Exception:
         return RedirectResponse(f"{settings.frontend_url}?zerodha=connected&sync=failed")
@@ -87,7 +87,7 @@ def zerodha_session(payload: ZerodhaSessionRequest, db: Session = Depends(get_db
     )
     sync_result = None
     try:
-        sync_result = sync_zerodha_instruments(db=db, exchange="NFO")
+        sync_result = sync_zerodha_option_exchanges(db=db)
     except Exception as exc:
         sync_result = {"synced": 0, "error": str(exc)}
     return {

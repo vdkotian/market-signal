@@ -8,6 +8,7 @@ from backend.app.api.backtests import router as backtests_router
 from backend.app.api.dashboard import router as dashboard_router
 from backend.app.api.instruments import router as instruments_router
 from backend.app.api.levels import router as levels_router
+from backend.app.api.realtime import router as realtime_router
 from backend.app.api.simulations import router as simulations_router
 from backend.app.api.ticks import router as ticks_router
 from backend.app.api.trading import router as trading_router
@@ -38,6 +39,7 @@ app.include_router(backtests_router)
 app.include_router(dashboard_router)
 app.include_router(instruments_router)
 app.include_router(levels_router)
+app.include_router(realtime_router)
 app.include_router(simulations_router)
 app.include_router(ticks_router)
 app.include_router(trading_router)

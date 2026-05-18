@@ -46,6 +46,7 @@ class LevelRead(LevelCreate):
 class DailyLevelSetRead(BaseModel):
     id: int
     instrument_id: int
+    instrument: InstrumentRead
     trading_day: date
     status: str
     levels: List[LevelRead]

@@ -3,6 +3,7 @@ from typing import Callable, Dict, List
 
 from backend.app.broker.broker_client import MarketDataClient
 from backend.app.broker.zerodha_config import zerodha_settings
+from backend.app.core.timezone import IST, as_utc
 from backend.app.dto.trading_dto import Tick
 
 
@@ -49,6 +50,7 @@ class ZerodhaMarketDataClient(MarketDataClient):
         timestamp = raw_tick.get("exchange_timestamp") or raw_tick.get("timestamp")
         if timestamp is None:
             timestamp = datetime.utcnow()
+        timestamp = as_utc(timestamp, naive_timezone=IST)
         return Tick(
             instrument_token=token,
             instrument_id=self.token_to_instrument_id[token],

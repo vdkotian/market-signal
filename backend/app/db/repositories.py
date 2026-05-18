@@ -16,6 +16,51 @@ class DuplicateLevelSetError(ValueError):
     pass
 
 
+OPTION_QUERY_ALIASES = {
+    "CALL": "CE",
+    "PUT": "PE",
+}
+MONTH_QUERY_TOKENS = {
+    "JAN",
+    "JANUARY",
+    "FEB",
+    "FEBRUARY",
+    "MAR",
+    "MARCH",
+    "APR",
+    "APRIL",
+    "MAY",
+    "JUN",
+    "JUNE",
+    "JUL",
+    "JULY",
+    "AUG",
+    "AUGUST",
+    "SEP",
+    "SEPT",
+    "SEPTEMBER",
+    "OCT",
+    "OCTOBER",
+    "NOV",
+    "NOVEMBER",
+    "DEC",
+    "DECEMBER",
+}
+
+
+def instrument_search_tokens(query: str) -> List[str]:
+    normalized = query.upper()
+    for character in ("-", "_", "/", ",", ".", "(", ")"):
+        normalized = normalized.replace(character, " ")
+    tokens = []
+    for token in normalized.split():
+        mapped_token = OPTION_QUERY_ALIASES.get(token, token)
+        if mapped_token in MONTH_QUERY_TOKENS:
+            continue
+        tokens.append(mapped_token)
+    return tokens
+
+
 def create_instrument(
     db: Session,
     symbol: str,
@@ -56,16 +101,19 @@ def upsert_instrument(
     return instrument
 
 
-def list_instruments(db: Session, query: Optional[str] = None, limit: int = 100) -> List[Instrument]:
-    statement = select(Instrument).order_by(Instrument.symbol).limit(limit)
+def list_instruments(
+    db: Session,
+    query: Optional[str] = None,
+    exchange: Optional[str] = None,
+    limit: int = 100,
+) -> List[Instrument]:
+    statement = select(Instrument)
     if query:
-        like_query = f"%{query.upper()}%"
-        statement = (
-            select(Instrument)
-            .where(Instrument.symbol.ilike(like_query))
-            .order_by(Instrument.symbol)
-            .limit(limit)
-        )
+        for token in instrument_search_tokens(query):
+            statement = statement.where(Instrument.symbol.ilike(f"%{token}%"))
+    if exchange:
+        statement = statement.where(Instrument.exchange == exchange.upper())
+    statement = statement.order_by(Instrument.symbol).limit(limit)
     return list(db.scalars(statement).all())
 
 
@@ -85,13 +133,7 @@ def create_daily_level_set(
 ) -> DailyLevelSet:
     if trading_day < date.today():
         raise LockedLevelSetError("Past trading days cannot be edited")
-    existing = db.scalar(
-        select(DailyLevelSet).where(
-            DailyLevelSet.instrument_id == instrument_id,
-            DailyLevelSet.trading_day == trading_day,
-            DailyLevelSet.status == LevelSetStatus.ACTIVE.value,
-        )
-    )
+    existing = get_active_daily_level_set(db, instrument_id, trading_day)
     if existing:
         raise DuplicateLevelSetError("Active level set already exists for instrument and day")
 
@@ -116,6 +158,22 @@ def create_daily_level_set(
     db.commit()
     db.refresh(level_set)
     return level_set
+
+
+def get_active_daily_level_set(
+    db: Session,
+    instrument_id: int,
+    trading_day: date,
+) -> Optional[DailyLevelSet]:
+    return db.scalar(
+        select(DailyLevelSet)
+        .options(selectinload(DailyLevelSet.instrument), selectinload(DailyLevelSet.levels))
+        .where(
+            DailyLevelSet.instrument_id == instrument_id,
+            DailyLevelSet.trading_day == trading_day,
+            DailyLevelSet.status == LevelSetStatus.ACTIVE.value,
+        )
+    )
 
 
 def ensure_demo_level_set(
@@ -162,7 +220,7 @@ def ensure_demo_level_set(
 def get_daily_level_set(db: Session, level_set_id: int) -> DailyLevelSet:
     level_set = db.scalar(
         select(DailyLevelSet)
-        .options(selectinload(DailyLevelSet.levels))
+        .options(selectinload(DailyLevelSet.instrument), selectinload(DailyLevelSet.levels))
         .where(DailyLevelSet.id == level_set_id)
     )
     if level_set is None:
@@ -179,7 +237,9 @@ def list_daily_level_sets_filtered(
     trading_day: Optional[date] = None,
     instrument_id: Optional[int] = None,
 ) -> List[DailyLevelSet]:
-    statement = select(DailyLevelSet).options(selectinload(DailyLevelSet.levels))
+    statement = select(DailyLevelSet).options(
+        selectinload(DailyLevelSet.instrument), selectinload(DailyLevelSet.levels)
+    )
     if trading_day:
         statement = statement.where(DailyLevelSet.trading_day == trading_day)
     if instrument_id:
@@ -228,6 +288,20 @@ def cancel_daily_level_set(db: Session, level_set_id: int, updated_by: str) -> D
     db.commit()
     db.refresh(level_set)
     return level_set
+
+
+def delete_daily_level_set(db: Session, level_set_id: int) -> None:
+    level_set = get_daily_level_set(db, level_set_id)
+    assert_level_set_editable(level_set, date.today())
+    db.add(
+        AuditLog(
+            event_type="DAILY_LEVEL_SET_DELETED",
+            instrument_id=level_set.instrument_id,
+            message=f"Deleted levels for {level_set.trading_day}",
+        )
+    )
+    db.delete(level_set)
+    db.commit()
 
 
 def lock_past_level_sets(db: Session, today: date) -> int:

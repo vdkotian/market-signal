@@ -68,5 +68,15 @@ def test_dashboard_summary_includes_mock_tick_state() -> None:
     assert body["counts"]["open_positions"] == 1
     assert body["counts"]["recent_orders"] == 1
     assert body["counts"]["latest_prices"] == 1
+    assert body["counts"]["tracked_instruments"] == 1
     assert body["latest_prices"][0]["last_price"] == 110
+    assert body["latest_prices"][0]["timestamp_ist"].endswith("IST")
+    assert body["tracked_instruments"][0]["symbol"] == "NIFTY_TEST_CE"
+    assert body["tracked_instruments"][0]["last_price"] == 110
+    assert body["tracked_instruments"][0]["last_tick_at_ist"].endswith("IST")
+    assert body["tracked_instruments"][0]["levels"][0]["level_name"] == "L0"
     assert body["open_positions"][0]["entry_price"] == 110
+    assert body["orders"][0]["symbol"] == "NIFTY_TEST_CE"
+    assert body["orders"][0]["side"] == "BUY"
+    assert body["orders"][0]["reason"] == "L1 entry reached"
+    assert body["orders"][0]["created_at_ist"].endswith("IST")

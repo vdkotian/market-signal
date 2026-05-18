@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from backend.app.db.repositories import create_instrument, list_instruments
 from backend.app.db.session import get_db
 from backend.app.schemas.instruments import InstrumentCreate, InstrumentRead
-from backend.app.services.instrument_sync import sync_zerodha_instruments
+from backend.app.services.instrument_sync import sync_zerodha_option_exchanges
 
 router = APIRouter(prefix="/instruments", tags=["instruments"])
 
@@ -26,23 +26,35 @@ def add_instrument(payload: InstrumentCreate, db: Session = Depends(get_db)):
 @router.get("", response_model=List[InstrumentRead])
 def get_instruments(
     query: str = "",
+    exchange: str = "",
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
-    return list_instruments(db, query=query or None, limit=limit)
+    return list_instruments(
+        db,
+        query=query or None,
+        exchange=exchange or None,
+        limit=limit,
+    )
 
 
 @router.post("/sync/zerodha")
 def sync_instruments_from_zerodha(
-    exchange: str = "NFO",
+    exchange: str = "NFO,BFO",
+    instrument_types: str = "CE,PE",
     limit: int = Query(default=0, ge=0, le=100000),
     db: Session = Depends(get_db),
 ) -> dict:
     try:
-        return sync_zerodha_instruments(
+        exchanges = [item.strip().upper() for item in exchange.split(",") if item.strip()]
+        allowed_types = [
+            item.strip().upper() for item in instrument_types.split(",") if item.strip()
+        ]
+        return sync_zerodha_option_exchanges(
             db=db,
-            exchange=exchange or None,
+            exchanges=exchanges or ["NFO", "BFO"],
             limit=limit or None,
+            instrument_types=allowed_types or ["CE", "PE"],
         )
     except Exception as exc:
         raise HTTPException(status_code=409, detail=str(exc))

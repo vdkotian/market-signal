@@ -105,7 +105,7 @@ def test_zerodha_session_is_stored_in_database(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["message"].startswith("Zerodha connected")
     assert response.json()["user_id"] == "AB1234"
-    assert response.json()["instrument_sync"]["synced"] == 1
+    assert response.json()["instrument_sync"]["synced"] == 2
     assert status_response.json()["db_session_active"] is True
     assert status_response.json()["access_token_configured"] is True
 
