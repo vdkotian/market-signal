@@ -12,7 +12,7 @@ from backend.app.db.repositories import (
     delete_daily_level_set,
     get_daily_level_set,
     list_daily_level_sets_filtered,
-    lock_past_level_sets,
+    archive_past_level_sets,
     update_daily_level_set,
 )
 from backend.app.db.session import get_db
@@ -49,10 +49,16 @@ def add_level_set(payload: DailyLevelSetCreate, db: Session = Depends(get_db)):
 def get_level_sets(
     trading_day: Optional[date] = None,
     instrument_id: Optional[int] = None,
+    include_cancelled: bool = False,
     db: Session = Depends(get_db),
 ):
-    lock_past_level_sets(db, today=date.today())
-    return list_daily_level_sets_filtered(db, trading_day=trading_day, instrument_id=instrument_id)
+    archive_past_level_sets(db, today=date.today())
+    return list_daily_level_sets_filtered(
+        db,
+        trading_day=trading_day,
+        instrument_id=instrument_id,
+        include_cancelled=include_cancelled,
+    )
 
 
 @router.get("/{level_set_id}", response_model=DailyLevelSetRead)

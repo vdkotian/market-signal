@@ -38,6 +38,7 @@ class DailyLevelSet(Base):
     instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), nullable=False)
     trading_day: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default=LevelSetStatus.DRAFT.value)
+    execution_status: Mapped[str] = mapped_column(String(20), default="PENDING")
     locked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_by: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     updated_by: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)

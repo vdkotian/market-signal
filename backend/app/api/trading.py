@@ -20,3 +20,18 @@ def reset_today_paper_trades(db: Session = Depends(get_db)) -> dict:
     trading_day = date.today()
     deleted = reset_paper_trades_for_day(db, trading_day=trading_day)
     return {"trading_day": trading_day.isoformat(), **deleted}
+
+
+@router.post("/paper-trades/reset-today/{instrument_id}")
+def reset_today_paper_trades_for_instrument(
+    instrument_id: int, db: Session = Depends(get_db)
+) -> dict:
+    trading_day = date.today()
+    deleted = reset_paper_trades_for_day(
+        db, trading_day=trading_day, instrument_id=instrument_id
+    )
+    return {
+        "trading_day": trading_day.isoformat(),
+        "instrument_id": instrument_id,
+        **deleted,
+    }

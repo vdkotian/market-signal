@@ -100,3 +100,61 @@ def test_level_sets_api_returns_instrument_and_updates_today_levels() -> None:
     )
     assert delete_response.json()["deleted"] is True
     assert after_delete_response.json() == []
+
+
+def test_level_sets_api_hides_cancelled_by_default() -> None:
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+
+    db = TestingSessionLocal()
+    instrument = Instrument(
+        symbol="NIFTY_TEST_PE",
+        exchange="NFO",
+        instrument_token=1002,
+        lot_size=1,
+        tick_size=0.05,
+    )
+    db.add(instrument)
+    db.commit()
+    db.refresh(instrument)
+    db.close()
+
+    def override_db():
+        session = TestingSessionLocal()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_db] = override_db
+    client = TestClient(app)
+    create_response = client.post(
+        "/level-sets",
+        json={
+            "instrument_id": instrument.id,
+            "trading_day": date.today().isoformat(),
+            "created_by": "test",
+            "levels": [
+                {"level_name": "L0", "price": 100, "sort_order": 0, "role": "STOPLOSS"},
+                {"level_name": "L1", "price": 110, "sort_order": 1, "role": "ENTRY"},
+            ],
+        },
+    )
+    level_set_id = create_response.json()["id"]
+    cancel_response = client.post(f"/level-sets/{level_set_id}/cancel")
+    default_list_response = client.get(f"/level-sets?trading_day={date.today().isoformat()}")
+    history_list_response = client.get(
+        f"/level-sets?trading_day={date.today().isoformat()}&include_cancelled=true"
+    )
+    app.dependency_overrides.clear()
+
+    assert cancel_response.status_code == 200
+    assert default_list_response.status_code == 200
+    assert default_list_response.json() == []
+    assert history_list_response.status_code == 200
+    assert history_list_response.json()[0]["status"] == "CANCELLED"

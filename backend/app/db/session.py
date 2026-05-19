@@ -49,3 +49,16 @@ def _ensure_sqlite_columns() -> None:
                     "ADD COLUMN instrument_type VARCHAR(20) DEFAULT '' NOT NULL"
                 )
             )
+    columns_by_table = {
+        table_name: {column["name"] for column in inspector.get_columns(table_name)}
+        for table_name in inspector.get_table_names()
+    }
+    level_set_columns = columns_by_table.get("daily_level_sets", set())
+    with engine.begin() as connection:
+        if "execution_status" not in level_set_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE daily_level_sets "
+                    "ADD COLUMN execution_status VARCHAR(20) DEFAULT 'PENDING'"
+                )
+            )

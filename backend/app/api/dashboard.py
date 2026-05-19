@@ -156,6 +156,13 @@ def dashboard_summary(db: Session = Depends(get_db)) -> dict:
                 if level_set.instrument_id in latest_ticks
                 else None,
                 "trade": _trade_status(latest_position_by_instrument.get(level_set.instrument_id)),
+                "decision": _decision_state(
+                    sorted(level_set.levels, key=lambda item: item.sort_order),
+                    latest_ticks.get(level_set.instrument_id).last_price
+                    if level_set.instrument_id in latest_ticks
+                    else None,
+                    latest_position_by_instrument.get(level_set.instrument_id),
+                ),
                 "levels": [
                     {
                         "level_name": level.level_name,
@@ -223,3 +230,71 @@ def _trade_status(position: Optional[Position]) -> dict:
             }
         )
     return payload
+
+
+def _decision_state(levels: List[object], last_price: Optional[float], position: Optional[Position]) -> dict:
+    l1 = next((level for level in levels if level.level_name == "L1"), None)
+    if l1 is None:
+        return {
+            "state": "NOT_READY",
+            "label": "Missing L1",
+            "reason": "Entry level L1 is required before strategy can trade.",
+            "entry_price": None,
+            "distance_to_entry": None,
+            "distance_direction": None,
+        }
+    if position and position.status == PositionStatus.OPEN.value:
+        return {
+            "state": "IN_TRADE",
+            "label": "In trade",
+            "reason": f"Bought at {position.entry_price}; trailing stoploss is {position.trailing_stoploss_price}.",
+            "entry_price": l1.price,
+            "distance_to_entry": 0,
+            "distance_direction": "AT_ENTRY",
+        }
+    if position and position.status == PositionStatus.CLOSED.value:
+        return {
+            "state": "DONE_FOR_DAY",
+            "label": "Done for today",
+            "reason": "This instrument already completed its one allowed trade today.",
+            "entry_price": l1.price,
+            "distance_to_entry": 0,
+            "distance_direction": "DONE",
+        }
+    if last_price is None:
+        return {
+            "state": "WAITING_FOR_PRICE",
+            "label": "Waiting for price",
+            "reason": "No live price has reached the backend yet.",
+            "entry_price": l1.price,
+            "distance_to_entry": None,
+            "distance_direction": None,
+        }
+
+    distance = round(l1.price - last_price, 4)
+    if last_price < l1.price:
+        return {
+            "state": "WAITING_BELOW_ENTRY",
+            "label": "Waiting below entry",
+            "reason": f"Needs to rise by {abs(distance)} to touch L1 entry {l1.price}.",
+            "entry_price": l1.price,
+            "distance_to_entry": abs(distance),
+            "distance_direction": "BELOW",
+        }
+    if last_price > l1.price:
+        return {
+            "state": "WAITING_ABOVE_ENTRY",
+            "label": "Waiting above entry",
+            "reason": f"Needs to fall by {abs(distance)} to touch L1 entry {l1.price}.",
+            "entry_price": l1.price,
+            "distance_to_entry": abs(distance),
+            "distance_direction": "ABOVE",
+        }
+    return {
+        "state": "AT_ENTRY",
+        "label": "At entry",
+        "reason": "Price is at L1; next strategy tick can trigger entry if no trade exists today.",
+        "entry_price": l1.price,
+        "distance_to_entry": 0,
+        "distance_direction": "AT_ENTRY",
+    }

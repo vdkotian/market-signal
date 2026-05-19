@@ -77,6 +77,8 @@ def test_dashboard_summary_includes_mock_tick_state() -> None:
     assert body["tracked_instruments"][0]["trade"]["status"] == "OPEN_TRADE"
     assert body["tracked_instruments"][0]["trade"]["label"] == "Open trade"
     assert body["tracked_instruments"][0]["trade"]["entry_price"] == 110
+    assert body["tracked_instruments"][0]["decision"]["state"] == "IN_TRADE"
+    assert body["tracked_instruments"][0]["decision"]["entry_price"] == 110
     assert body["tracked_instruments"][0]["levels"][0]["level_name"] == "L0"
     assert body["open_positions"][0]["symbol"] == "NIFTY_TEST_CE"
     assert body["open_positions"][0]["entry_price"] == 110

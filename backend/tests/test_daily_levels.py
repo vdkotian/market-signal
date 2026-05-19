@@ -7,13 +7,14 @@ from sqlalchemy.pool import StaticPool
 from backend.app.core.enums import LevelSetStatus
 from backend.app.db.repositories import (
     DuplicateLevelSetError,
+    archive_past_level_sets,
     assert_level_set_editable,
     cancel_daily_level_set,
     create_daily_level_set,
     update_daily_level_set,
 )
 from backend.app.db.session import Base
-from backend.app.models.tables import DailyLevelSet, Instrument
+from backend.app.models.tables import DailyLevelSet, Instrument, Level, Position
 
 
 def test_past_level_set_is_not_editable() -> None:
@@ -67,6 +68,52 @@ def test_today_level_set_can_be_updated_and_cancelled() -> None:
     db.close()
 
 
+def test_past_level_sets_are_archived_with_execution_status() -> None:
+    db = _db()
+    executed_instrument = _instrument(db, symbol="EXECUTED_CE", token=123)
+    missed_instrument = _instrument(db, symbol="MISSED_CE", token=124)
+    past_day = date(2026, 5, 17)
+    executed_level_set = DailyLevelSet(
+        instrument_id=executed_instrument.id,
+        trading_day=past_day,
+        status=LevelSetStatus.ACTIVE.value,
+        execution_status="PENDING",
+    )
+    executed_level_set.levels.extend([Level(**level) for level in _levels(100, 110)])
+    missed_level_set = DailyLevelSet(
+        instrument_id=missed_instrument.id,
+        trading_day=past_day,
+        status=LevelSetStatus.ACTIVE.value,
+        execution_status="PENDING",
+    )
+    missed_level_set.levels.extend([Level(**level) for level in _levels(200, 210)])
+    db.add_all([executed_level_set, missed_level_set])
+    db.add(
+        Position(
+            instrument_id=executed_instrument.id,
+            trading_day=past_day,
+            quantity=1,
+            entry_price=110,
+            stoploss_price=100,
+            trailing_stoploss_price=105,
+            high_water_mark=112,
+            status="CLOSED",
+        )
+    )
+    db.commit()
+
+    archived_count = archive_past_level_sets(db, today=date(2026, 5, 18))
+    archived_executed = db.get(DailyLevelSet, executed_level_set.id)
+    archived_missed = db.get(DailyLevelSet, missed_level_set.id)
+    db.close()
+
+    assert archived_count == 2
+    assert archived_executed.status == LevelSetStatus.EXPIRED.value
+    assert archived_executed.execution_status == "EXECUTED"
+    assert archived_missed.status == LevelSetStatus.EXPIRED.value
+    assert archived_missed.execution_status == "NOT_EXECUTED"
+
+
 def _db():
     engine = create_engine(
         "sqlite:///:memory:",
@@ -78,11 +125,11 @@ def _db():
     return TestingSessionLocal()
 
 
-def _instrument(db):
+def _instrument(db, symbol="TEST_CE", token=123):
     instrument = Instrument(
-        symbol="TEST_CE",
+        symbol=symbol,
         exchange="NFO",
-        instrument_token=123,
+        instrument_token=token,
         lot_size=50,
         tick_size=0.05,
     )

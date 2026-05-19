@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from backend.app.core.enums import LevelSetStatus
 from backend.app.models.tables import AuditLog, DailyLevelSet, Instrument, Level
+from backend.app.models.tables import Order, Position
 
 
 class LockedLevelSetError(ValueError):
@@ -164,6 +165,7 @@ def create_daily_level_set(
         instrument_id=instrument_id,
         trading_day=trading_day,
         status=LevelSetStatus.ACTIVE.value,
+        execution_status="PENDING",
         created_by=created_by,
         updated_by=created_by,
     )
@@ -260,6 +262,7 @@ def list_daily_level_sets_filtered(
     db: Session,
     trading_day: Optional[date] = None,
     instrument_id: Optional[int] = None,
+    include_cancelled: bool = False,
 ) -> List[DailyLevelSet]:
     statement = select(DailyLevelSet).options(
         selectinload(DailyLevelSet.instrument), selectinload(DailyLevelSet.levels)
@@ -268,6 +271,8 @@ def list_daily_level_sets_filtered(
         statement = statement.where(DailyLevelSet.trading_day == trading_day)
     if instrument_id:
         statement = statement.where(DailyLevelSet.instrument_id == instrument_id)
+    if not include_cancelled:
+        statement = statement.where(DailyLevelSet.status != LevelSetStatus.CANCELLED.value)
     statement = statement.order_by(DailyLevelSet.trading_day.desc(), DailyLevelSet.id.desc())
     return list(db.scalars(statement).all())
 
@@ -329,6 +334,10 @@ def delete_daily_level_set(db: Session, level_set_id: int) -> None:
 
 
 def lock_past_level_sets(db: Session, today: date) -> int:
+    return archive_past_level_sets(db, today=today)
+
+
+def archive_past_level_sets(db: Session, today: date) -> int:
     level_sets = db.scalars(
         select(DailyLevelSet).where(
             DailyLevelSet.trading_day < today,
@@ -336,13 +345,17 @@ def lock_past_level_sets(db: Session, today: date) -> int:
         )
     ).all()
     for level_set in level_sets:
-        level_set.status = LevelSetStatus.LOCKED.value
+        level_set.status = LevelSetStatus.EXPIRED.value
+        level_set.execution_status = _level_set_execution_status(db, level_set)
         level_set.locked_at = datetime.utcnow()
         db.add(
             AuditLog(
-                event_type="DAILY_LEVEL_SET_LOCKED",
+                event_type="DAILY_LEVEL_SET_ARCHIVED",
                 instrument_id=level_set.instrument_id,
-                message=f"Locked levels for {level_set.trading_day}",
+                message=(
+                    f"Archived levels for {level_set.trading_day}: "
+                    f"{level_set.execution_status}"
+                ),
             )
         )
     db.commit()
@@ -350,5 +363,29 @@ def lock_past_level_sets(db: Session, today: date) -> int:
 
 
 def assert_level_set_editable(level_set: DailyLevelSet, today: date) -> None:
-    if level_set.trading_day < today or level_set.status == LevelSetStatus.LOCKED.value:
+    if level_set.trading_day < today or level_set.status in {
+        LevelSetStatus.LOCKED.value,
+        LevelSetStatus.EXPIRED.value,
+    }:
         raise LockedLevelSetError("Past or locked level sets cannot be edited")
+
+
+def _level_set_execution_status(db: Session, level_set: DailyLevelSet) -> str:
+    position_exists = db.scalar(
+        select(Position.id).where(
+            Position.instrument_id == level_set.instrument_id,
+            Position.trading_day == level_set.trading_day,
+        )
+    )
+    if position_exists is not None:
+        return "EXECUTED"
+
+    order_exists = db.scalar(
+        select(Order.id).where(
+            Order.instrument_id == level_set.instrument_id,
+            Order.side == "BUY",
+            Order.created_at >= datetime.combine(level_set.trading_day, datetime.min.time()),
+            Order.created_at <= datetime.combine(level_set.trading_day, datetime.max.time()),
+        )
+    )
+    return "EXECUTED" if order_exists is not None else "NOT_EXECUTED"

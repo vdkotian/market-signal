@@ -50,6 +50,7 @@ class DailyLevelSetRead(BaseModel):
     instrument: InstrumentRead
     trading_day: date
     status: str
+    execution_status: str
     levels: List[LevelRead]
 
     model_config = {"from_attributes": True}

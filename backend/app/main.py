@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from datetime import date
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
@@ -14,12 +15,19 @@ from backend.app.api.ticks import router as ticks_router
 from backend.app.api.trading import router as trading_router
 from backend.app.api.zerodha import router as zerodha_router
 from backend.app.core.config import settings
+from backend.app.db.repositories import archive_past_level_sets
 from backend.app.db.session import create_db
+from backend.app.db.session import SessionLocal
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     create_db()
+    db = SessionLocal()
+    try:
+        archive_past_level_sets(db, today=date.today())
+    finally:
+        db.close()
     yield
 
 
