@@ -135,18 +135,6 @@ def has_open_position(db: Session, instrument_id: int, trading_day: date) -> boo
     return get_open_position_state(db, instrument_id, trading_day) is not None
 
 
-def has_position_for_day(db: Session, instrument_id: int, trading_day: date) -> bool:
-    return (
-        db.scalar(
-            select(Position.id).where(
-                Position.instrument_id == instrument_id,
-                Position.trading_day == trading_day,
-            )
-        )
-        is not None
-    )
-
-
 def persist_workflow_results(
     db: Session,
     instrument_id: int,
@@ -166,16 +154,6 @@ def _persist_execution(db: Session, trading_day: date, result: ExecutionResult) 
     action = result.action
     position_id = None
     if result.success and result.position and action.side == OrderSide.BUY:
-        existing_trade = has_position_for_day(db, action.instrument_id, trading_day)
-        if existing_trade:
-            db.add(
-                AuditLog(
-                    event_type="RE_ENTRY_BLOCKED",
-                    instrument_id=action.instrument_id,
-                    message="Skipped new paper trade because this instrument already traded today",
-                )
-            )
-            return
         existing_position = _get_open_position_model(db, action.instrument_id, trading_day)
         if existing_position:
             db.add(

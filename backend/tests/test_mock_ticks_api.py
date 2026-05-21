@@ -147,7 +147,7 @@ def test_mock_tick_endpoint_publishes_realtime_tick(monkeypatch) -> None:
     assert published_messages[0]["tick"]["timestamp_ist"].endswith("IST")
 
 
-def test_mock_tick_endpoint_blocks_reentry_after_trade_is_closed() -> None:
+def test_mock_tick_endpoint_allows_reentry_after_trade_is_closed() -> None:
     tick_cache._latest_ticks.clear()
     engine = create_engine(
         "sqlite:///:memory:",
@@ -203,16 +203,17 @@ def test_mock_tick_endpoint_blocks_reentry_after_trade_is_closed() -> None:
     app.dependency_overrides.clear()
 
     assert reentry.status_code == 200
-    assert reentry.json()["results"] == []
+    assert any(result.get("action", {}).get("side") == "BUY" for result in reentry.json()["results"])
 
     verify_db = TestingSessionLocal()
     positions = verify_db.scalars(select(Position)).all()
     orders = verify_db.scalars(select(Order)).all()
     verify_db.close()
 
-    assert len(positions) == 1
+    assert len(positions) == 2
     assert positions[0].status == PositionStatus.CLOSED.value
-    assert [order.side for order in orders] == ["BUY", "SELL"]
+    assert positions[1].status == PositionStatus.OPEN.value
+    assert [order.side for order in orders] == ["BUY", "SELL", "BUY"]
 
 
 def test_mock_tick_endpoint_handles_mixed_timestamp_awareness() -> None:

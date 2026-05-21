@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 from backend.app.core.timezone import as_utc, display_ist_time, iso_utc
 from backend.app.db.trading_state import (
     get_active_level_context,
-    has_position_for_day,
     get_instrument_by_token,
     get_open_position_state,
     persist_workflow_results,
@@ -47,9 +46,6 @@ def process_tick(
     )
     previous_tick = tick_cache.get_previous(instrument.id)
     position = get_open_position_state(db, instrument.id, trading_day)
-    trade_already_taken = position is None and has_position_for_day(
-        db, instrument.id, trading_day
-    )
 
     workflow = TickWorkflow(strategy=LevelStrategy(trailing_gap=5))
     if previous_tick:
@@ -58,7 +54,7 @@ def process_tick(
         workflow.positions[instrument.id] = position
 
     market_context = MarketAgent().build_context(tick, previous_tick)
-    results = [] if trade_already_taken else workflow.handle_tick(tick, levels)
+    results = workflow.handle_tick(tick, levels)
     persist_workflow_results(db, instrument.id, trading_day, results)
     tick_cache.update(tick)
 

@@ -75,9 +75,6 @@ class Level(Base):
 
 class Position(Base):
     __tablename__ = "positions"
-    __table_args__ = (
-        UniqueConstraint("instrument_id", "trading_day", name="uq_position_instrument_day"),
-    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), nullable=False)

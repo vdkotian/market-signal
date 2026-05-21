@@ -66,6 +66,25 @@ def test_trailing_stoploss_does_not_activate_before_entry() -> None:
     assert signals == []
 
 
+def test_trailing_stoploss_stays_at_l0_until_l2_is_reached() -> None:
+    strategy = LevelStrategy(trailing_gap=5)
+    market = MarketAgent()
+    position = PositionState(
+        instrument_id=1,
+        trading_day=date(2026, 5, 17),
+        quantity=1,
+        entry_price=110,
+        stoploss_price=100,
+        trailing_stoploss_price=100,
+        high_water_mark=110,
+    )
+    context = market.build_context(tick(118, 1), tick(116, 0))
+
+    signals = strategy.evaluate(context, levels(), position=position)
+
+    assert signals == []
+
+
 def test_upper_checkpoint_tightens_trailing_without_selling() -> None:
     strategy = LevelStrategy(trailing_gap=5)
     market = MarketAgent()
@@ -107,4 +126,3 @@ def test_tick_workflow_keeps_state_per_instrument() -> None:
         getattr(result, "signal_type", None) == SignalType.TARGET_CHECKPOINT_REACHED
         for result in checkpoint_results
     )
-

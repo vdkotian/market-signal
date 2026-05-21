@@ -205,10 +205,10 @@ def _trade_status(position: Optional[Position]) -> dict:
     payload = {
         "status": "OPEN_TRADE"
         if position.status == PositionStatus.OPEN.value
-        else "CLOSED_FOR_TODAY",
+        else "CLOSED_TRADE",
         "label": "Open trade"
         if position.status == PositionStatus.OPEN.value
-        else "Closed for today",
+        else "Closed trade",
         "position_id": position.id,
         "quantity": position.quantity,
         "entry_price": position.entry_price,
@@ -251,15 +251,6 @@ def _decision_state(levels: List[object], last_price: Optional[float], position:
             "entry_price": l1.price,
             "distance_to_entry": 0,
             "distance_direction": "AT_ENTRY",
-        }
-    if position and position.status == PositionStatus.CLOSED.value:
-        return {
-            "state": "DONE_FOR_DAY",
-            "label": "Done for today",
-            "reason": "This instrument already completed its one allowed trade today.",
-            "entry_price": l1.price,
-            "distance_to_entry": 0,
-            "distance_direction": "DONE",
         }
     if last_price is None:
         return {

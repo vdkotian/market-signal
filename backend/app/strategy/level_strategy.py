@@ -70,12 +70,14 @@ class LevelStrategy:
             ]
 
         high_water_mark = max(position.high_water_mark, tick.last_price)
-        trailing_stop = max(position.trailing_stoploss_price, high_water_mark - self.trailing_gap)
+        trailing_is_active = position.trailing_stoploss_price > position.stoploss_price
+        trailing_stop = position.trailing_stoploss_price
 
         for level in levels.upper_levels:
             if level.name in position.reached_checkpoints:
                 continue
             if self._reached_level(market.previous_price, tick.last_price, level.price):
+                trailing_is_active = True
                 trailing_stop = max(trailing_stop, level.price - self.trailing_gap)
                 signals.append(
                     StrategySignal(
@@ -87,6 +89,9 @@ class LevelStrategy:
                         trailing_stoploss_price=trailing_stop,
                     )
                 )
+
+        if trailing_is_active:
+            trailing_stop = max(trailing_stop, high_water_mark - self.trailing_gap)
 
         if trailing_stop > position.trailing_stoploss_price:
             signals.append(

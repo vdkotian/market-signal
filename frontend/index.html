@@ -169,6 +169,19 @@
                   <button class="btn btn-primary btn-sm w-full" id="saveLevelsBtn" type="submit">Save Today's Levels</button>
                 </form>
 
+                <section class="grid gap-3 rounded-lg border border-base-300 p-3">
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <div class="text-sm font-medium">Today's Level Sets</div>
+                      <div class="text-xs text-base-content/60">Edit or delete levels already punched today</div>
+                    </div>
+                    <button class="btn btn-outline btn-sm" id="refreshLevelsBtn" type="button">Refresh</button>
+                  </div>
+                  <div id="levelSetsTable" class="grid gap-2">
+                    <div class="text-sm text-base-content/60">No level sets loaded.</div>
+                  </div>
+                </section>
+
                 <form id="mockTickForm" class="grid gap-3 rounded-lg border border-base-300 p-3">
                   <div class="text-sm font-medium">Test Tick</div>
                   <div class="grid grid-cols-[1fr_auto] gap-2">
@@ -442,7 +455,7 @@
 
       function tradeBadgeClass(status) {
         if (status === "OPEN_TRADE") return "badge-primary";
-        if (status === "CLOSED_FOR_TODAY") return "badge-neutral";
+        if (status === "CLOSED_TRADE") return "badge-neutral";
         return "badge-warning";
       }
 
@@ -456,7 +469,7 @@
             </div>
           `;
         }
-        if (trade.status === "CLOSED_FOR_TODAY") {
+        if (trade.status === "CLOSED_TRADE") {
           return `
             <div class="grid gap-1">
               <span class="badge ${tradeBadgeClass(trade.status)} badge-sm">${trade.label}</span>
@@ -469,7 +482,6 @@
 
       function decisionBadgeClass(state) {
         if (state === "IN_TRADE") return "badge-primary";
-        if (state === "DONE_FOR_DAY") return "badge-neutral";
         if (state === "AT_ENTRY") return "badge-success";
         if (state === "WAITING_FOR_PRICE") return "badge-warning";
         return "badge-outline";
@@ -523,8 +535,8 @@
       function tradeFromRealtimePosition(position) {
         if (!position) return null;
         return {
-          status: position.is_open ? "OPEN_TRADE" : "CLOSED_FOR_TODAY",
-          label: position.is_open ? "Open trade" : "Closed for today",
+          status: position.is_open ? "OPEN_TRADE" : "CLOSED_TRADE",
+          label: position.is_open ? "Open trade" : "Closed trade",
           quantity: position.quantity,
           entry_price: position.entry_price,
           stoploss_price: position.stoploss_price,
@@ -571,6 +583,15 @@
             renderLevelRows();
           });
         });
+      }
+
+      function resetLevelDrafts() {
+        levelDrafts = [
+          { level_name: "L0", price: "", role: "STOPLOSS" },
+          { level_name: "L1", price: "", role: "ENTRY" },
+          { level_name: "L2", price: "", role: "CHECKPOINT" },
+        ];
+        renderLevelRows();
       }
 
       function addLevelRow() {
@@ -654,7 +675,7 @@
                 <td>${item.levels.map((level) => `${level.level_name}:${formatNumber(level.price)}`).join(" · ")}</td>
                 <td>${item.last_tick_at ? displayIstTime(item.last_tick_at_ist, item.last_tick_at) : "Waiting"}</td>
                 <td>${renderTradeState(item)}</td>
-                <td><button class="btn btn-xs btn-outline" data-monitor-instrument-id="${item.instrument_id}" type="button">Use</button></td>
+                <td><button class="btn btn-xs btn-outline" data-monitor-instrument-id="${item.instrument_id}" type="button">Use / Edit</button></td>
               </tr>
             `).join("")
           : `<tr><td colspan="6" class="text-base-content/60">No active level instruments loaded.</td></tr>`;
@@ -665,16 +686,27 @@
               (trackedItem) => trackedItem.instrument_id === Number(button.dataset.monitorInstrumentId)
             );
             if (!item) return;
-            selectInstrument({
-              id: item.instrument_id,
-              symbol: item.symbol,
-              exchange: item.exchange,
-              instrument_type: item.instrument_type,
-              instrument_token: item.instrument_token,
-              lot_size: 1,
-            });
+            editLevelSet(levelSetFromTrackedInstrument(item));
           });
         });
+      }
+
+      function levelSetFromTrackedInstrument(item) {
+        return {
+          id: item.level_set_id,
+          instrument_id: item.instrument_id,
+          instrument: {
+            id: item.instrument_id,
+            symbol: item.symbol,
+            exchange: item.exchange,
+            instrument_type: item.instrument_type,
+            instrument_token: item.instrument_token,
+            lot_size: 1,
+          },
+          trading_day: todayIso(),
+          status: "ACTIVE",
+          levels: item.levels,
+        };
       }
 
       function applyRealtimeTick(message) {
@@ -725,15 +757,6 @@
             state: "IN_TRADE",
             label: "In trade",
             reason: `Bought at ${formatNumber(trade.entry_price)}; trailing stoploss is ${formatNumber(trade.trailing_stoploss_price)}.`,
-            entry_price: l1.price,
-            distance_to_entry: 0,
-          };
-        }
-        if (trade.status === "CLOSED_FOR_TODAY") {
-          return {
-            state: "DONE_FOR_DAY",
-            label: "Done for today",
-            reason: "This instrument already completed its one allowed trade today.",
             entry_price: l1.price,
             distance_to_entry: 0,
           };
@@ -963,6 +986,11 @@
         if (!options.keepEditing) {
           editingLevelSetId = null;
           $("saveLevelsBtn").textContent = "Save Today's Levels";
+          $("levelEditBanner").classList.add("hidden");
+          $("levelEditBanner").textContent = "";
+          showActiveLevelPreview(null);
+          resetLevelDrafts();
+          loadExistingLevelSetForSelectedInstrument(instrument.id).catch((error) => setStatus(error.message, true));
         }
         hideInstrumentSuggestions();
       }
@@ -977,12 +1005,7 @@
         $("levelEditBanner").classList.add("hidden");
         $("levelEditBanner").textContent = "";
         showActiveLevelPreview(null);
-        levelDrafts = [
-          { level_name: "L0", price: "", role: "STOPLOSS" },
-          { level_name: "L1", price: "", role: "ENTRY" },
-          { level_name: "L2", price: "", role: "CHECKPOINT" },
-        ];
-        renderLevelRows();
+        resetLevelDrafts();
       }
 
       function editLevelSet(levelSet) {
@@ -1003,6 +1026,14 @@
         showActiveLevelPreview(levelSet);
         setStatus(`Editing levels for ${levelSet.instrument.symbol}`);
         $("levelForm").scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+
+      async function loadExistingLevelSetForSelectedInstrument(instrumentId) {
+        const levelSet = await findActiveLevelSetForInstrument(instrumentId);
+        if (!levelSet || !selectedInstrument || Number(selectedInstrument.id) !== Number(instrumentId)) {
+          return;
+        }
+        editLevelSet(levelSet);
       }
 
       async function refreshStreamStatus() {
