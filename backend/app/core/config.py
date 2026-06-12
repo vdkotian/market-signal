@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     broker: str = "ZERODHA"
     square_off_time: str = "15:15"
     frontend_url: str = "http://127.0.0.1:3000"
+    cors_origins: str = "http://127.0.0.1:3000,http://localhost:3000,http://0.0.0.0:3000"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
     model_config = SettingsConfigDict(
         env_file=".env",

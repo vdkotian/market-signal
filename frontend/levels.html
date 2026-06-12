@@ -125,7 +125,9 @@
     </div>
 
     <script>
-      const API_BASE = "http://127.0.0.1:8000";
+      const API_BASE =
+        window.MARKET_SIGNAL_API_BASE ||
+        (window.location.port === "3000" ? "http://127.0.0.1:8000" : window.location.origin);
       const $ = (id) => document.getElementById(id);
 
       function setStatus(message, isError = false) {
